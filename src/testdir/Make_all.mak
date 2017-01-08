@@ -151,6 +151,7 @@ NEW_TESTS = test_arglist.res \
 	    test_display.res \
 	    test_farsi.res \
 	    test_fnameescape.res \
+	    test_fold.res \
 	    test_gf.res \
 	    test_gn.res \
 	    test_gui.res \
@@ -183,6 +184,7 @@ NEW_TESTS = test_arglist.res \
 	    test_stat.res \
 	    test_substitute.res \
 	    test_syntax.res \
+	    test_system.res \
 	    test_textobjects.res \
 	    test_undo.res \
 	    test_usercommands.res \
