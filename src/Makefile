@@ -379,7 +379,7 @@ CClink = $(CC)
 #CONF_OPT_GUI = --enable-gui=carbon
 
 # Uncomment this line to run an individual test with gvim.
-#GUI_TESTARG = GUI_FLAG=-g 
+#GUI_TESTARG = GUI_FLAG=-g
 
 # DARWIN - detecting Mac OS X
 # Uncomment this line when you want to compile a Unix version of Vim on
@@ -1241,10 +1241,11 @@ NONE_INSTALL = install_normal
 
 ### GTK GUI
 GTK_SRC		= gui.c gui_gtk.c gui_gtk_x11.c pty.c gui_gtk_f.c \
-			gui_beval.c $(GRESOURCE_SRC)
+			gui_beval.c gui_overlay.c $(GRESOURCE_SRC)
 GTK_OBJ		= objects/gui.o objects/gui_gtk.o objects/gui_gtk_x11.o \
 			objects/pty.o objects/gui_gtk_f.o \
-			objects/gui_beval.o $(GRESOURCE_OBJ)
+			objects/gui_beval.o objects/gui_overlay.o \
+			$(GRESOURCE_OBJ)
 GTK_DEFS	= -DFEAT_GUI_GTK $(NARROW_PROTO)
 GTK_IPATH	= $(GUI_INC_LOC)
 GTK_LIBS_DIR	= $(GUI_LIB_LOC)
@@ -1577,7 +1578,7 @@ TAGS_SRC = *.c *.cpp if_perl.xs
 
 EXTRA_SRC = hangulin.c if_lua.c if_mzsch.c auto/if_perl.c if_perlsfio.c \
 	    if_python.c if_python3.c if_tcl.c if_ruby.c \
-	    gui_beval.c workshop.c wsdebug.c integration.c \
+	    gui_beval.c gui_overlay.c workshop.c wsdebug.c integration.c \
 	    netbeans.c channel.c \
 	    $(GRESOURCE_SRC)
 
@@ -1782,6 +1783,7 @@ PRO_AUTO = \
 	version.pro \
 	window.pro \
 	gui_beval.pro \
+	gui_overlay.pro \
 	workshop.pro \
 	netbeans.pro \
 	channel.pro \
@@ -2964,6 +2966,9 @@ objects/gui_athena.o: gui_athena.c
 objects/gui_beval.o: gui_beval.c
 	$(CCC) -o $@ gui_beval.c
 
+objects/gui_overlay.o: gui_overlay.c
+	$(CCC) -o $@ gui_overlay.c
+
 objects/gui_gtk.o: gui_gtk.c
 	$(CCC) -o $@ gui_gtk.c
 
@@ -3312,7 +3317,8 @@ objects/eval.o: eval.c vim.h auto/config.h feature.h os_unix.h auto/osdef.h \
 objects/evalfunc.o: evalfunc.c vim.h auto/config.h feature.h os_unix.h \
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
  regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h \
- proto.h globals.h farsi.h arabic.h version.h
+ proto.h globals.h farsi.h arabic.h gui_overlay.h proto/gui_overlay.pro \
+ version.h
 objects/ex_cmds.o: ex_cmds.c vim.h auto/config.h feature.h os_unix.h auto/osdef.h \
  ascii.h keymap.h term.h macros.h option.h structs.h regexp.h gui.h \
  gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h proto.h \
@@ -3631,6 +3637,10 @@ objects/gui_beval.o: gui_beval.c vim.h auto/config.h feature.h os_unix.h \
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
  regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h \
  proto.h globals.h farsi.h arabic.h
+objects/gui_overlay.o: gui_overlay.c vim.h auto/config.h feature.h os_unix.h \
+ auto/osdef.h ascii.h keymap.h term.h macros.h option.h structs.h \
+ regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h ex_cmds.h spell.h \
+ proto.h globals.h farsi.h arabic.h gui_overlay.h proto/gui_overlay.pro
 objects/workshop.o: workshop.c auto/config.h integration.h vim.h feature.h \
  os_unix.h auto/osdef.h ascii.h keymap.h term.h macros.h option.h \
  structs.h regexp.h gui.h gui_beval.h proto/gui_beval.pro alloc.h \

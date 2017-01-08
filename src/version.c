@@ -473,6 +473,9 @@ static char *(features[]) =
 	"-ole",
 # endif
 #endif
+#ifdef FEAT_OVERLAY
+	"+overlay",
+#endif
 	"+packages",
 #ifdef FEAT_PATH_EXTRA
 	"+path_extra",

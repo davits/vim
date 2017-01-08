@@ -1300,6 +1300,14 @@
 # endif
 #endif
 
+/*
+ * +overlay Allow popup type overlay window to be drawn on a text area.
+ *	    Only for GUI.
+ */
+#if defined(FEAT_HUGE) && defined(FEAT_GUI_GTK)
+# define FEAT_OVERLAY
+#endif
+
 #if defined(FEAT_BEVAL) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
 # define FEAT_BEVAL_TIP		/* balloon eval used for toolbar tooltip */
 #endif

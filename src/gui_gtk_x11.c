@@ -30,6 +30,10 @@
 #include "auto/gui_gtk_gresources.h"
 #endif
 
+#ifdef FEAT_OVERLAY
+#include "gui_overlay.h"
+#endif
+
 #ifdef FEAT_GUI_GNOME
 /* Gnome redefines _() and N_().  Grrr... */
 # ifdef _
@@ -997,6 +1001,10 @@ focus_out_event(GtkWidget *widget UNUSED,
 		GdkEventFocus *event UNUSED,
 		gpointer data UNUSED)
 {
+#ifdef FEAT_OVERLAY
+    overlay_close();
+#endif
+
     gui_focus_change(FALSE);
 
     if (blink_state != BLINK_NONE)
@@ -2068,6 +2076,10 @@ scroll_event(GtkWidget *widget,
 {
     int	    button;
     int_u   vim_modifiers;
+
+#ifdef FEAT_OVERLAY
+    overlay_close();
+#endif
 
 #if GTK_CHECK_VERSION(3,0,0)
     if (gtk_socket_id != 0 && !gtk_widget_has_focus(widget))

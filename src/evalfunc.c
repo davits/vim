@@ -16,6 +16,10 @@
 
 #if defined(FEAT_EVAL) || defined(PROTO)
 
+#ifdef FEAT_OVERLAY
+# include "gui_overlay.h"
+#endif
+
 #ifdef AMIGA
 # include <time.h>	/* for strftime() */
 #endif
@@ -273,6 +277,12 @@ static void f_mzeval(typval_T *argvars, typval_T *rettv);
 static void f_nextnonblank(typval_T *argvars, typval_T *rettv);
 static void f_nr2char(typval_T *argvars, typval_T *rettv);
 static void f_or(typval_T *argvars, typval_T *rettv);
+#ifdef FEAT_OVERLAY
+static void f_overlayclose(typval_T *argvars, typval_T *rettv);
+static void f_overlaynext(typval_T *argvars, typval_T *rettv);
+static void f_overlayprev(typval_T *argvars, typval_T *rettv);
+static void f_overlayshow(typval_T *argvars, typval_T *rettv);
+#endif
 static void f_pathshorten(typval_T *argvars, typval_T *rettv);
 #ifdef FEAT_PERL
 static void f_perleval(typval_T *argvars, typval_T *rettv);
@@ -700,6 +710,12 @@ static struct fst
     {"nextnonblank",	1, 1, f_nextnonblank},
     {"nr2char",		1, 2, f_nr2char},
     {"or",		2, 2, f_or},
+#ifdef FEAT_OVERLAY
+    {"overlayclose",	0, 0, f_overlayclose},
+    {"overlaynext",	0, 0, f_overlaynext},
+    {"overlayprev",	0, 0, f_overlayprev},
+    {"overlayshow",	3, 4, f_overlayshow},
+#endif
     {"pathshorten",	1, 1, f_pathshorten},
 #ifdef FEAT_PERL
     {"perleval",	1, 1, f_perleval},
@@ -5757,6 +5773,9 @@ f_has(typval_T *argvars, typval_T *rettv)
 #endif
 #ifdef FEAT_OLE
 	"ole",
+#endif
+#ifdef FEAT_OVERLAY
+	"overlay",
 #endif
 	"packages",
 #ifdef FEAT_PATH_EXTRA
@@ -13108,5 +13127,81 @@ f_xor(typval_T *argvars, typval_T *rettv)
 					^ get_tv_number_chk(&argvars[1], NULL);
 }
 
+#ifdef FEAT_OVERLAY
+
+    static void
+f_overlayshow(typval_T *argvars, typval_T *rettv)
+{
+    int err = 0;
+    long row = 0;
+    long col = 0;
+    list_T* lines = 0;
+    int markup = 0;
+
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+
+    row = get_tv_number_chk(&argvars[0], &err);
+    col = get_tv_number_chk(&argvars[1], &err);
+    if (err)
+        return;
+
+    if (argvars[2].v_type != VAR_LIST) {
+	EMSG(_(e_listreq));
+	return;
+    }
+
+    lines = argvars[2].vval.v_list;
+
+    if (lines->lv_len == 0) {
+	EMSG(_(e_invarg));
+	return;
+    }
+    listitem_T* li;
+    for (li = lines->lv_first; li != NULL; li = li->li_next) {
+	char_u* c = get_tv_string_chk(&(li->li_tv));
+	if (c == NULL || c[0] == '\0') {
+	    EMSG(_(e_invarg));
+	    return;
+	}
+    }
+
+    if (argvars[3].v_type != VAR_UNKNOWN) {
+	markup = get_tv_number_chk(&argvars[3], &err);
+    }
+    if (err)
+        return;
+
+    overlay_show(row, col, lines, markup);
+}
+
+    static void
+f_overlaynext(typval_T *argvars, typval_T *rettv)
+{
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+
+    overlay_next();
+}
+
+    static void
+f_overlayprev(typval_T *argvars, typval_T *rettv)
+{
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+
+    overlay_prev();
+}
+
+    static void
+f_overlayclose(typval_T *argvars, typval_T *rettv)
+{
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+
+    overlay_close();
+}
+
+#endif // FEAT_OVERLAY
 
 #endif /* FEAT_EVAL */

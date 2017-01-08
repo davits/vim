@@ -395,6 +395,7 @@ m  *+mzscheme/dyn*	Mzscheme interface |mzscheme-dynamic| |/dyn|
 m  *+netbeans_intg*	|netbeans|
    *+num64*		64-bit Number support |Number|
 m  *+ole*		Win32 GUI only: |ole-interface|
+H  +overlay		GTK GUI only: gui-overlay
 N  *+packages*		Loading |packages|
 N  *+path_extra*	Up/downwards search in 'path' and 'tags'
 m  *+perl*		Perl interface |perl|
@@ -496,12 +497,12 @@ N  *+X11*		Unix only: can restore window title |X11|
 			optional. {not in Vi}
 :redi[r] @{a-z}>>	Append messages to register {a-z}. {not in Vi}
 
-:redi[r] @*>		
+:redi[r] @*>
 :redi[r] @+>		Redirect messages to the selection or clipboard. For
 			backward compatibility, the ">" after the register
 			name can be omitted. See |quotestar| and |quoteplus|.
 			{not in Vi}
-:redi[r] @*>>		
+:redi[r] @*>>
 :redi[r] @+>>		Append messages to the selection or clipboard.
 			{not in Vi}
 
