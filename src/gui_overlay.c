@@ -119,6 +119,9 @@ get_row_col_coordinates(int row, int col, int* x, int* y)
 	// if sign bar is visible adjust column
 	col += 2;
     }
+    if (curwin->w_nrwidth != 0) {
+	col += curwin->w_nrwidth + 1;
+    }
     *x = gui.char_width * (col - curwin->w_leftcol - 1);
     *y = gui.char_height * (row - curwin->w_topline);
 }
