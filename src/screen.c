@@ -824,8 +824,9 @@ update_single_line(win_T *wp, linenr_T lnum)
     int		j;
 
     /* Don't do anything if the screen structures are (not yet) valid. */
-    if (!screen_valid(TRUE))
+    if (!screen_valid(TRUE) || updating_screen)
 	return;
+    updating_screen = TRUE;
 
     if (lnum >= wp->w_topline && lnum < wp->w_botline
 				 && foldedCount(wp, lnum, &win_foldinfo) == 0)
@@ -865,13 +866,11 @@ update_single_line(win_T *wp, linenr_T lnum)
 # endif
     }
     need_cursor_line_redraw = FALSE;
+    updating_screen = FALSE;
 }
 #endif
 
 #if defined(FEAT_SIGNS) || defined(FEAT_GUI)
-static void update_prepare(void);
-static void update_finish(void);
-
 /*
  * Prepare for updating one or more windows.
  * Caller must check for "updating_screen" already set to avoid recursiveness.
@@ -3650,7 +3649,8 @@ win_line(
 		if (fdc > 0)
 		{
 		    /* Draw the 'foldcolumn'.  Allocate a buffer, "extra" may
-		     * already be in used. */
+		     * already be in use. */
+		    vim_free(p_extra_free);
 		    p_extra_free = alloc(12 + 1);
 
 		    if (p_extra_free != NULL)
@@ -4695,6 +4695,7 @@ win_line(
 			p = alloc((unsigned)(len + 1));
 			vim_memset(p, ' ', len);
 			p[len] = NUL;
+			vim_free(p_extra_free);
 			p_extra_free = p;
 			for (i = 0; i < tab_len; i++)
 			{
@@ -4857,6 +4858,7 @@ win_line(
 			vim_memset(p, ' ', n_extra);
 			STRNCPY(p, p_extra + 1, STRLEN(p_extra) - 1);
 			p[n_extra] = NUL;
+			vim_free(p_extra_free);
 			p_extra_free = p_extra = p;
 		    }
 		    else
@@ -5784,6 +5786,7 @@ win_line(
     }
 #endif
 
+    vim_free(p_extra_free);
     return row;
 }
 
@@ -10344,6 +10347,8 @@ draw_tabline(void)
 #endif
 					    );
 
+    if (ScreenLines == NULL)
+	return;
     redraw_tabline = FALSE;
 
 #ifdef FEAT_GUI_TABLINE

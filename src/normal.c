@@ -426,6 +426,7 @@ static const struct nv_cmd
 #ifdef FEAT_AUTOCMD
     {K_CURSORHOLD, nv_cursorhold, NV_KEEPREG,		0},
 #endif
+    {K_PS,	nv_edit,	0,			0},
 };
 
 /* Number of commands in nv_cmds[]. */
@@ -1984,7 +1985,7 @@ do_pending_operator(cmdarg_T *cap, int old_col, int gui_yank)
 		op_formatexpr(oap);	/* use expression */
 	    else
 #endif
-		if (*p_fp != NUL)
+		if (*p_fp != NUL || *curbuf->b_p_fp != NUL)
 		op_colon(oap);		/* use external command */
 	    else
 		op_format(oap, FALSE);	/* use internal function */
@@ -2197,10 +2198,12 @@ op_colon(oparg_T *oap)
     }
     else if (oap->op_type == OP_FORMAT)
     {
-	if (*p_fp == NUL)
-	    stuffReadbuff((char_u *)"fmt");
-	else
+	if (*curbuf->b_p_fp != NUL)
+	    stuffReadbuff(curbuf->b_p_fp);
+	else if (*p_fp != NUL)
 	    stuffReadbuff(p_fp);
+	else
+	    stuffReadbuff((char_u *)"fmt");
 	stuffReadbuff((char_u *)"\n']");
     }
 
@@ -2980,9 +2983,9 @@ do_mouse(
 	if (State & INSERT)
 	    stuffcharReadbuff(Ctrl_O);
 	if (curwin->w_llist_ref == NULL)	/* quickfix window */
-	    stuffReadbuff((char_u *)":.cc\n");
+	    do_cmdline_cmd((char_u *)".cc");
 	else					/* location list window */
-	    stuffReadbuff((char_u *)":.ll\n");
+	    do_cmdline_cmd((char_u *)".ll");
 	got_click = FALSE;		/* ignore drag&release now */
     }
 #endif
@@ -3856,7 +3859,7 @@ add_to_showcmd(int c)
 	K_VER_SCROLLBAR, K_HOR_SCROLLBAR,
 	K_LEFTMOUSE_NM, K_LEFTRELEASE_NM,
 # endif
-	K_IGNORE,
+	K_IGNORE, K_PS,
 	K_LEFTMOUSE, K_LEFTDRAG, K_LEFTRELEASE,
 	K_MIDDLEMOUSE, K_MIDDLEDRAG, K_MIDDLERELEASE,
 	K_RIGHTMOUSE, K_RIGHTDRAG, K_RIGHTRELEASE,
@@ -9013,6 +9016,7 @@ nv_esc(cmdarg_T *cap)
 
 /*
  * Handle "A", "a", "I", "i" and <Insert> commands.
+ * Also handle K_PS, start bracketed paste.
  */
     static void
 nv_edit(cmdarg_T *cap)
@@ -9040,6 +9044,9 @@ nv_edit(cmdarg_T *cap)
 	/* Only give this error when 'insertmode' is off. */
 	EMSG(_(e_modifiable));
 	clearop(cap->oap);
+	if (cap->cmdchar == K_PS)
+	    /* drop the pasted text */
+	    bracketed_paste(PASTE_INSERT, TRUE, NULL);
     }
     else if (!checkclearopq(cap->oap))
     {
@@ -9071,6 +9078,7 @@ nv_edit(cmdarg_T *cap)
 		break;
 
 	    case 'a':	/* "a"ppend is like "i"nsert on the next character. */
+	    case K_PS:	/* bracketed paste works like "a"ppend */
 #ifdef FEAT_VIRTUALEDIT
 		/* increment coladd when in virtual space, increment the
 		 * column otherwise, also to append after an unprintable char */
@@ -9101,6 +9109,9 @@ nv_edit(cmdarg_T *cap)
 
 	invoke_edit(cap, FALSE, cap->cmdchar, FALSE);
     }
+    else if (cap->cmdchar == K_PS)
+	/* drop the pasted text */
+	bracketed_paste(PASTE_INSERT, TRUE, NULL);
 }
 
 /*
