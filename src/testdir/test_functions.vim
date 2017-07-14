@@ -27,6 +27,13 @@ func Test_empty()
   call assert_equal(1, empty(v:false))
   call assert_equal(0, empty(v:true))
 
+  if has('channel')
+    call assert_equal(1, empty(test_null_channel()))
+  endif
+  if has('job')
+    call assert_equal(1, empty(test_null_job()))
+  endif
+
   call assert_equal(0, empty(function('Test_empty')))
 endfunc
 
@@ -304,4 +311,501 @@ func Test_toupper()
   call assert_equal("Ⱥ Ⱦ", toupper("ⱥ ⱦ"))
 endfunc
 
+" Tests for the mode() function
+let current_modes = ''
+func Save_mode()
+  let g:current_modes = mode(0) . '-' . mode(1)
+  return ''
+endfunc
 
+func Test_mode()
+  new
+  call append(0, ["Blue Ball Black", "Brown Band Bowl", ""])
+
+  " Only complete from the current buffer.
+  set complete=.
+
+  inoremap <F2> <C-R>=Save_mode()<CR>
+
+  normal! 3G
+  exe "normal i\<F2>\<Esc>"
+  call assert_equal('i-i', g:current_modes)
+  " i_CTRL-P: Multiple matches
+  exe "normal i\<C-G>uBa\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-P: Single match
+  exe "normal iBro\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X
+  exe "normal iBa\<C-X>\<F2>\<Esc>u"
+  call assert_equal('i-ix', g:current_modes)
+  " i_CTRL-X CTRL-P: Multiple matches
+  exe "normal iBa\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-P: Single match
+  exe "normal iBro\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-P + CTRL-P: Single match
+  exe "normal iBro\<C-X>\<C-P>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-L: Multiple matches
+  exe "normal i\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-L: Single match
+  exe "normal iBlu\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-P: No match
+  exe "normal iCom\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-P: No match
+  exe "normal iCom\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+  " i_CTRL-X CTRL-L: No match
+  exe "normal iabc\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('i-ic', g:current_modes)
+
+  " R_CTRL-P: Multiple matches
+  exe "normal RBa\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-P: Single match
+  exe "normal RBro\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X
+  exe "normal RBa\<C-X>\<F2>\<Esc>u"
+  call assert_equal('R-Rx', g:current_modes)
+  " R_CTRL-X CTRL-P: Multiple matches
+  exe "normal RBa\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-P: Single match
+  exe "normal RBro\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-P + CTRL-P: Single match
+  exe "normal RBro\<C-X>\<C-P>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-L: Multiple matches
+  exe "normal R\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-L: Single match
+  exe "normal RBlu\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-P: No match
+  exe "normal RCom\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-P: No match
+  exe "normal RCom\<C-X>\<C-P>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+  " R_CTRL-X CTRL-L: No match
+  exe "normal Rabc\<C-X>\<C-L>\<F2>\<Esc>u"
+  call assert_equal('R-Rc', g:current_modes)
+
+  call assert_equal('n', mode(0))
+  call assert_equal('n', mode(1))
+
+  " How to test operator-pending mode?
+
+  call feedkeys("v", 'xt')
+  call assert_equal('v', mode())
+  call assert_equal('v', mode(1))
+  call feedkeys("\<Esc>V", 'xt')
+  call assert_equal('V', mode())
+  call assert_equal('V', mode(1))
+  call feedkeys("\<Esc>\<C-V>", 'xt')
+  call assert_equal("\<C-V>", mode())
+  call assert_equal("\<C-V>", mode(1))
+  call feedkeys("\<Esc>", 'xt')
+
+  call feedkeys("gh", 'xt')
+  call assert_equal('s', mode())
+  call assert_equal('s', mode(1))
+  call feedkeys("\<Esc>gH", 'xt')
+  call assert_equal('S', mode())
+  call assert_equal('S', mode(1))
+  call feedkeys("\<Esc>g\<C-H>", 'xt')
+  call assert_equal("\<C-S>", mode())
+  call assert_equal("\<C-S>", mode(1))
+  call feedkeys("\<Esc>", 'xt')
+
+  call feedkeys(":echo \<C-R>=Save_mode()\<C-U>\<CR>", 'xt')
+  call assert_equal('c-c', g:current_modes)
+  call feedkeys("gQecho \<C-R>=Save_mode()\<CR>\<CR>vi\<CR>", 'xt')
+  call assert_equal('c-cv', g:current_modes)
+  " How to test Ex mode?
+
+  bwipe!
+  iunmap <F2>
+  set complete&
+endfunc
+
+func Test_getbufvar()
+  let bnr = bufnr('%')
+  let b:var_num = '1234'
+  let def_num = '5678'
+  call assert_equal('1234', getbufvar(bnr, 'var_num'))
+  call assert_equal('1234', getbufvar(bnr, 'var_num', def_num))
+
+  let bd = getbufvar(bnr, '')
+  call assert_equal('1234', bd['var_num'])
+  call assert_true(exists("bd['changedtick']"))
+  call assert_equal(2, len(bd))
+
+  let bd2 = getbufvar(bnr, '', def_num)
+  call assert_equal(bd, bd2)
+
+  unlet b:var_num
+  call assert_equal(def_num, getbufvar(bnr, 'var_num', def_num))
+  call assert_equal('', getbufvar(bnr, 'var_num'))
+
+  let bd = getbufvar(bnr, '')
+  call assert_equal(1, len(bd))
+  let bd = getbufvar(bnr, '',def_num)
+  call assert_equal(1, len(bd))
+
+  call assert_equal('', getbufvar(9999, ''))
+  call assert_equal(def_num, getbufvar(9999, '', def_num))
+  unlet def_num
+
+  call assert_equal(0, getbufvar(bnr, '&autoindent'))
+  call assert_equal(0, getbufvar(bnr, '&autoindent', 1))
+
+  " Open new window with forced option values
+  set fileformats=unix,dos
+  new ++ff=dos ++bin ++enc=iso-8859-2
+  call assert_equal('dos', getbufvar(bufnr('%'), '&fileformat'))
+  call assert_equal(1, getbufvar(bufnr('%'), '&bin'))
+  call assert_equal('iso-8859-2', getbufvar(bufnr('%'), '&fenc'))
+  close
+
+  set fileformats&
+endfunc
+
+func Test_bufexists()
+  call assert_equal(0, bufexists('does_not_exist'))
+  call assert_equal(1, bufexists(bufnr('%')))
+  call assert_equal(0, bufexists(0))
+  new Xfoo
+  let bn = bufnr('%')
+  call assert_equal(1, bufexists(bn))
+  call assert_equal(1, bufexists('Xfoo'))
+  call assert_equal(1, bufexists(getcwd() . '/Xfoo'))
+  call assert_equal(1, bufexists(0))
+  bw
+  call assert_equal(0, bufexists(bn))
+  call assert_equal(0, bufexists('Xfoo'))
+endfunc
+
+func Test_last_buffer_nr()
+  call assert_equal(bufnr('$'), last_buffer_nr())
+endfunc
+
+func Test_stridx()
+  call assert_equal(-1, stridx('', 'l'))
+  call assert_equal(0,  stridx('', ''))
+  call assert_equal(0,  stridx('hello', ''))
+  call assert_equal(-1, stridx('hello', 'L'))
+  call assert_equal(2,  stridx('hello', 'l', -1))
+  call assert_equal(2,  stridx('hello', 'l', 0))
+  call assert_equal(2,  stridx('hello', 'l', 1))
+  call assert_equal(3,  stridx('hello', 'l', 3))
+  call assert_equal(-1, stridx('hello', 'l', 4))
+  call assert_equal(-1, stridx('hello', 'l', 10))
+  call assert_equal(2,  stridx('hello', 'll'))
+  call assert_equal(-1, stridx('hello', 'hello world'))
+endfunc
+
+func Test_strridx()
+  call assert_equal(-1, strridx('', 'l'))
+  call assert_equal(0,  strridx('', ''))
+  call assert_equal(5,  strridx('hello', ''))
+  call assert_equal(-1, strridx('hello', 'L'))
+  call assert_equal(3,  strridx('hello', 'l'))
+  call assert_equal(3,  strridx('hello', 'l', 10))
+  call assert_equal(3,  strridx('hello', 'l', 3))
+  call assert_equal(2,  strridx('hello', 'l', 2))
+  call assert_equal(-1, strridx('hello', 'l', 1))
+  call assert_equal(-1, strridx('hello', 'l', 0))
+  call assert_equal(-1, strridx('hello', 'l', -1))
+  call assert_equal(2,  strridx('hello', 'll'))
+  call assert_equal(-1, strridx('hello', 'hello world'))
+endfunc
+
+func Test_matchend()
+  call assert_equal(7,  matchend('testing', 'ing'))
+  call assert_equal(7,  matchend('testing', 'ing', 2))
+  call assert_equal(-1, matchend('testing', 'ing', 5))
+endfunc
+
+func Test_nextnonblank_prevnonblank()
+  new
+insert
+This
+
+
+is
+
+a
+Test
+.
+  call assert_equal(0, nextnonblank(-1))
+  call assert_equal(0, nextnonblank(0))
+  call assert_equal(1, nextnonblank(1))
+  call assert_equal(4, nextnonblank(2))
+  call assert_equal(4, nextnonblank(3))
+  call assert_equal(4, nextnonblank(4))
+  call assert_equal(6, nextnonblank(5))
+  call assert_equal(6, nextnonblank(6))
+  call assert_equal(7, nextnonblank(7))
+  call assert_equal(0, nextnonblank(8))
+
+  call assert_equal(0, prevnonblank(-1))
+  call assert_equal(0, prevnonblank(0))
+  call assert_equal(1, prevnonblank(1))
+  call assert_equal(1, prevnonblank(2))
+  call assert_equal(1, prevnonblank(3))
+  call assert_equal(4, prevnonblank(4))
+  call assert_equal(4, prevnonblank(5))
+  call assert_equal(6, prevnonblank(6))
+  call assert_equal(7, prevnonblank(7))
+  call assert_equal(0, prevnonblank(8))
+  bw!
+endfunc
+
+func Test_byte2line_line2byte()
+  new
+  call setline(1, ['a', 'bc', 'd'])
+
+  set fileformat=unix
+  call assert_equal([-1, -1, 1, 1, 2, 2, 2, 3, 3, -1],
+  \                 map(range(-1, 8), 'byte2line(v:val)'))
+  call assert_equal([-1, -1, 1, 3, 6, 8, -1],
+  \                 map(range(-1, 5), 'line2byte(v:val)'))
+
+  set fileformat=mac
+  call assert_equal([-1, -1, 1, 1, 2, 2, 2, 3, 3, -1],
+  \                 map(range(-1, 8), 'byte2line(v:val)'))
+  call assert_equal([-1, -1, 1, 3, 6, 8, -1],
+  \                 map(range(-1, 5), 'line2byte(v:val)'))
+
+  set fileformat=dos
+  call assert_equal([-1, -1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, -1],
+  \                 map(range(-1, 11), 'byte2line(v:val)'))
+  call assert_equal([-1, -1, 1, 4, 8, 11, -1],
+  \                 map(range(-1, 5), 'line2byte(v:val)'))
+
+  set fileformat&
+  bw!
+endfunc
+
+func Test_count()
+  let l = ['a', 'a', 'A', 'b']
+  call assert_equal(2, count(l, 'a'))
+  call assert_equal(1, count(l, 'A'))
+  call assert_equal(1, count(l, 'b'))
+  call assert_equal(0, count(l, 'B'))
+
+  call assert_equal(2, count(l, 'a', 0))
+  call assert_equal(1, count(l, 'A', 0))
+  call assert_equal(1, count(l, 'b', 0))
+  call assert_equal(0, count(l, 'B', 0))
+
+  call assert_equal(3, count(l, 'a', 1))
+  call assert_equal(3, count(l, 'A', 1))
+  call assert_equal(1, count(l, 'b', 1))
+  call assert_equal(1, count(l, 'B', 1))
+  call assert_equal(0, count(l, 'c', 1))
+
+  call assert_equal(1, count(l, 'a', 0, 1))
+  call assert_equal(2, count(l, 'a', 1, 1))
+  call assert_fails('call count(l, "a", 0, 10)', 'E684:')
+
+  let d = {1: 'a', 2: 'a', 3: 'A', 4: 'b'}
+  call assert_equal(2, count(d, 'a'))
+  call assert_equal(1, count(d, 'A'))
+  call assert_equal(1, count(d, 'b'))
+  call assert_equal(0, count(d, 'B'))
+
+  call assert_equal(2, count(d, 'a', 0))
+  call assert_equal(1, count(d, 'A', 0))
+  call assert_equal(1, count(d, 'b', 0))
+  call assert_equal(0, count(d, 'B', 0))
+
+  call assert_equal(3, count(d, 'a', 1))
+  call assert_equal(3, count(d, 'A', 1))
+  call assert_equal(1, count(d, 'b', 1))
+  call assert_equal(1, count(d, 'B', 1))
+  call assert_equal(0, count(d, 'c', 1))
+
+  call assert_fails('call count(d, "a", 0, 1)', 'E474:')
+  call assert_fails('call count("a", "a")', 'E712:')
+endfunc
+
+func Test_changenr()
+  new Xchangenr
+  call assert_equal(0, changenr())
+  norm ifoo
+  call assert_equal(1, changenr())
+  set undolevels=10
+  norm Sbar
+  call assert_equal(2, changenr())
+  undo
+  call assert_equal(1, changenr())
+  redo
+  call assert_equal(2, changenr())
+  bw!
+  set undolevels&
+endfunc
+
+func Test_filewritable()
+  new Xfilewritable
+  write!
+  call assert_equal(1, filewritable('Xfilewritable'))
+
+  call assert_notequal(0, setfperm('Xfilewritable', 'r--r-----'))
+  call assert_equal(0, filewritable('Xfilewritable'))
+
+  call assert_notequal(0, setfperm('Xfilewritable', 'rw-r-----'))
+  call assert_equal(1, filewritable('Xfilewritable'))
+
+  call assert_equal(0, filewritable('doesnotexist'))
+
+  call delete('Xfilewritable')
+  bw!
+endfunc
+
+func Test_hostname()
+  let hostname_vim = hostname()
+  if has('unix')
+    let hostname_system = systemlist('uname -n')[0]
+    call assert_equal(hostname_vim, hostname_system)
+  endif
+endfunc
+
+func Test_getpid()
+  " getpid() always returns the same value within a vim instance.
+  call assert_equal(getpid(), getpid())
+  if has('unix')
+    call assert_equal(systemlist('echo $PPID')[0], string(getpid()))
+  endif
+endfunc
+
+func Test_hlexists()
+  call assert_equal(0, hlexists('does_not_exist'))
+  call assert_equal(0, hlexists('Number'))
+  call assert_equal(0, highlight_exists('does_not_exist'))
+  call assert_equal(0, highlight_exists('Number'))
+  syntax on
+  call assert_equal(0, hlexists('does_not_exist'))
+  call assert_equal(1, hlexists('Number'))
+  call assert_equal(0, highlight_exists('does_not_exist'))
+  call assert_equal(1, highlight_exists('Number'))
+  syntax off
+endfunc
+
+func Test_col()
+  new
+  call setline(1, 'abcdef')
+  norm gg4|mx6|mY2|
+  call assert_equal(2, col('.'))
+  call assert_equal(7, col('$'))
+  call assert_equal(4, col("'x"))
+  call assert_equal(6, col("'Y"))
+  call assert_equal(2, col([1, 2]))
+  call assert_equal(7, col([1, '$']))
+
+  call assert_equal(0, col(''))
+  call assert_equal(0, col('x'))
+  call assert_equal(0, col([2, '$']))
+  call assert_equal(0, col([1, 100]))
+  call assert_equal(0, col([1]))
+  bw!
+endfunc
+
+func Test_balloon_show()
+  if has('balloon_eval')
+    " This won't do anything but must not crash either.
+    call balloon_show('hi!')
+  endif
+endfunc
+
+func Test_setbufvar_options()
+  " This tests that aucmd_prepbuf() and aucmd_restbuf() properly restore the
+  " window layout.
+  call assert_equal(1, winnr('$'))
+  split dummy_preview
+  resize 2
+  set winfixheight winfixwidth
+  let prev_id = win_getid()
+
+  wincmd j
+  let wh = winheight('.')
+  let dummy_buf = bufnr('dummy_buf1', v:true)
+  call setbufvar(dummy_buf, '&buftype', 'nofile')
+  execute 'belowright vertical split #' . dummy_buf
+  call assert_equal(wh, winheight('.'))
+  let dum1_id = win_getid()
+
+  wincmd h
+  let wh = winheight('.')
+  let dummy_buf = bufnr('dummy_buf2', v:true)
+  call setbufvar(dummy_buf, '&buftype', 'nofile')
+  execute 'belowright vertical split #' . dummy_buf
+  call assert_equal(wh, winheight('.'))
+
+  bwipe!
+  call win_gotoid(prev_id)
+  bwipe!
+  call win_gotoid(dum1_id)
+  bwipe!
+endfunc
+
+func Test_redo_in_nested_functions()
+  nnoremap g. :set opfunc=Operator<CR>g@
+  function Operator( type, ... )
+     let @x = 'XXX'
+     execute 'normal! g`[' . (a:type ==# 'line' ? 'V' : 'v') . 'g`]' . '"xp'
+  endfunction
+
+  function! Apply()
+      5,6normal! .
+  endfunction
+
+  new
+  call setline(1, repeat(['some "quoted" text', 'more "quoted" text'], 3))
+  1normal g.i"
+  call assert_equal('some "XXX" text', getline(1))
+  3,4normal .
+  call assert_equal('some "XXX" text', getline(3))
+  call assert_equal('more "XXX" text', getline(4))
+  call Apply()
+  call assert_equal('some "XXX" text', getline(5))
+  call assert_equal('more "XXX" text', getline(6))
+  bwipe!
+
+  nunmap g.
+  delfunc Operator
+  delfunc Apply
+endfunc
+
+func Test_shellescape()
+  let save_shell = &shell
+  set shell=bash
+  call assert_equal("'text'", shellescape('text'))
+  call assert_equal("'te\"xt'", shellescape('te"xt'))
+  call assert_equal("'te'\\''xt'", shellescape("te'xt"))
+
+  call assert_equal("'te%xt'", shellescape("te%xt"))
+  call assert_equal("'te\\%xt'", shellescape("te%xt", 1))
+  call assert_equal("'te#xt'", shellescape("te#xt"))
+  call assert_equal("'te\\#xt'", shellescape("te#xt", 1))
+  call assert_equal("'te!xt'", shellescape("te!xt"))
+  call assert_equal("'te\\!xt'", shellescape("te!xt", 1))
+
+  call assert_equal("'te\nxt'", shellescape("te\nxt"))
+  call assert_equal("'te\\\nxt'", shellescape("te\nxt", 1))
+  set shell=tcsh
+  call assert_equal("'te\\!xt'", shellescape("te!xt"))
+  call assert_equal("'te\\\\!xt'", shellescape("te!xt", 1))
+  call assert_equal("'te\\\nxt'", shellescape("te\nxt"))
+  call assert_equal("'te\\\\\nxt'", shellescape("te\nxt", 1))
+
+  let &shell = save_shell
+endfunc

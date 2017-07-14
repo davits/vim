@@ -582,9 +582,9 @@ VimTryStart(void)
 VimTryEnd(void)
 {
     --trylevel;
-    /* Without this it stops processing all subsequent VimL commands and
-     * generates strange error messages if I e.g. try calling Test() in a
-     * cycle */
+    /* Without this it stops processing all subsequent Vim script commands and
+     * generates strange error messages if I e.g. try calling Test() in a cycle
+     */
     did_emsg = FALSE;
     /* Keyboard interrupt should be preferred over anything else */
     if (got_int)
@@ -625,7 +625,7 @@ VimTryEnd(void)
 	discard_current_exception();
 	return -1;
     }
-    /* Finally transform VimL exception to python one */
+    /* Finally transform Vim script exception to python one */
     else
     {
 	PyErr_SetVim((char *)current_exception->value);
@@ -4311,7 +4311,7 @@ restore_win_for_buf(
     static int
 SetBufferLine(buf_T *buf, PyInt n, PyObject *line, PyInt *len_change)
 {
-    bufref_T	save_curbuf = {NULL, 0};
+    bufref_T	save_curbuf = {NULL, 0, 0};
     win_T	*save_curwin = NULL;
     tabpage_T	*save_curtab = NULL;
 
@@ -4415,7 +4415,7 @@ SetBufferLineList(
 	PyObject *list,
 	PyInt *len_change)
 {
-    bufref_T	save_curbuf = {NULL, 0};
+    bufref_T	save_curbuf = {NULL, 0, 0};
     win_T	*save_curwin = NULL;
     tabpage_T	*save_curtab = NULL;
 
@@ -4616,7 +4616,7 @@ SetBufferLineList(
     static int
 InsertBufferLines(buf_T *buf, PyInt n, PyObject *lines, PyInt *len_change)
 {
-    bufref_T	save_curbuf = {NULL, 0};
+    bufref_T	save_curbuf = {NULL, 0, 0};
     win_T	*save_curwin = NULL;
     tabpage_T	*save_curtab = NULL;
 

@@ -1,7 +1,7 @@
 " Vim syntax file
 " Language: php PHP 3/4/5/7
 " Maintainer: Jason Woofenden <jason@jasonwoof.com>
-" Last Change: Dec 11, 2016
+" Last Change: Jun 09, 2017
 " URL: https://jasonwoof.com/gitweb/?p=vim-syntax.git;a=blob;f=php.vim;hb=HEAD
 " Former Maintainers: Peter Hodge <toomuchphp-vim@yahoo.com>
 "         Debian VIM Maintainers <pkg-vim-maintainers@lists.alioth.debian.org>
@@ -11,32 +11,28 @@
 "       colourscheme, because elflord's colours will better highlight the break-points
 "       (Statements) in your code.
 "
-" Options:  php_sql_query = 1  for SQL syntax highlighting inside strings
-"           php_htmlInStrings = 1  for HTML syntax highlighting inside strings
-"           php_baselib = 1  for highlighting baselib functions
-"           php_asp_tags = 1  for highlighting ASP-style short tags
-"           php_parent_error_close = 1  for highlighting parent error ] or )
-"           php_parent_error_open = 1  for skipping an php end tag, if there exists an open ( or [ without a closing one
-"           php_oldStyle = 1  for using old colorstyle
-"           php_noShortTags = 1  don't sync <? ?> as php
-"           php_folding = 1  for folding classes and functions
-"           php_folding = 2  for folding all { } regions
-"           php_sync_method = x
-"                             x=-1 to sync by search ( default )
-"                             x>0 to sync at least x lines backwards
-"                             x=0 to sync from start
-"
-"       Added by Peter Hodge On June 9, 2006:
-"           php_special_functions = 1|0 to highlight functions with abnormal behaviour
-"           php_alt_comparisons = 1|0 to highlight comparison operators in an alternate colour
-"           php_alt_assignByReference = 1|0 to highlight '= &' in an alternate colour
-"
-"           Note: these all default to 1 (On), so you would set them to '0' to turn them off.
-"                 E.g., in your .vimrc or _vimrc file:
-"                   let php_special_functions = 0
-"                   let php_alt_comparisons = 0
-"                   let php_alt_assignByReference = 0
-"                 Unletting these variables will revert back to their default (On).
+" Options:
+"    Set to anything to enable:
+"       php_sql_query           SQL syntax highlighting inside strings
+"       php_htmlInStrings       HTML syntax highlighting inside strings
+"       php_baselib             highlighting baselib functions
+"       php_asp_tags            highlighting ASP-style short tags
+"       php_parent_error_close  highlighting parent error ] or )
+"       php_parent_error_open   skipping an php end tag, if there exists
+"                                 an open ( or [ without a closing one
+"       php_oldStyle            use old colorstyle
+"       php_noShortTags         don't sync <? ?> as php
+"    Set to a specific value:
+"       php_folding = 1         fold classes and functions
+"       php_folding = 2         fold all { } regions
+"       php_sync_method = x  where x is an integer:
+"                         -1  sync by search ( default )
+"                         >0  sync at least x lines backwards
+"                         0   sync from start
+"    Set to 0 to _disable_:      (Added by Peter Hodge On June 9, 2006)
+"       php_special_functions = 0      highlight functions with abnormal behaviour
+"       php_alt_comparisons = 0        comparison operators in an alternate colour
+"       php_alt_assignByReference = 0  '= &' in an alternate colour
 "
 "
 " Note:
@@ -201,7 +197,7 @@ syn keyword phpFunctions  nsapi_request_headers nsapi_response_headers nsapi_vir
 syn keyword phpFunctions  aggregate_info aggregate_methods_by_list aggregate_methods_by_regexp aggregate_methods aggregate_properties_by_list aggregate_properties_by_regexp aggregate_properties aggregate aggregation_info deaggregate  contained
 syn keyword phpFunctions  ocibindbyname ocicancel ocicloselob ocicollappend ocicollassign ocicollassignelem ocicollgetelem ocicollmax ocicollsize ocicolltrim ocicolumnisnull ocicolumnname ocicolumnprecision ocicolumnscale ocicolumnsize ocicolumntype ocicolumntyperaw ocicommit ocidefinebyname ocierror ociexecute ocifetch ocifetchinto ocifetchstatement ocifreecollection ocifreecursor ocifreedesc ocifreestatement ociinternaldebug ociloadlob ocilogoff ocilogon ocinewcollection ocinewcursor ocinewdescriptor ocinlogon ocinumcols ociparse ociplogon ociresult ocirollback ocirowcount ocisavelob ocisavelobfile ociserverversion ocisetprefetch ocistatementtype ociwritelobtofile ociwritetemporarylob contained
 syn keyword phpFunctions  odbc_autocommit odbc_binmode odbc_close_all odbc_close odbc_columnprivileges odbc_columns odbc_commit odbc_connect odbc_cursor odbc_data_source odbc_do odbc_error odbc_errormsg odbc_exec odbc_execute odbc_fetch_array odbc_fetch_into odbc_fetch_object odbc_fetch_row odbc_field_len odbc_field_name odbc_field_num odbc_field_precision odbc_field_scale odbc_field_type odbc_foreignkeys odbc_free_result odbc_gettypeinfo odbc_longreadlen odbc_next_result odbc_num_fields odbc_num_rows odbc_pconnect odbc_prepare odbc_primarykeys odbc_procedurecolumns odbc_procedures odbc_result_all odbc_result odbc_rollback odbc_setoption odbc_specialcolumns odbc_statistics odbc_tableprivileges odbc_tables  contained
-syn keyword phpFunctions  openssl_csr_export_to_file openssl_csr_export openssl_csr_new openssl_csr_sign openssl_error_string openssl_free_key openssl_get_privatekey openssl_get_publickey openssl_open openssl_pkcs7_decrypt openssl_pkcs7_encrypt openssl_pkcs7_sign openssl_pkcs7_verify openssl_pkey_export_to_file openssl_pkey_export openssl_pkey_get_private openssl_pkey_get_public openssl_pkey_new openssl_private_decrypt openssl_private_encrypt openssl_public_decrypt openssl_public_encrypt openssl_seal openssl_sign openssl_verify openssl_x509_check_private_key openssl_x509_checkpurpose openssl_x509_export_to_file openssl_x509_export openssl_x509_free openssl_x509_parse openssl_x509_read contained
+syn keyword phpFunctions  openssl_cipher_iv_length openssl_csr_export_to_file openssl_csr_export openssl_csr_get_public_key openssl_csr_get_subject openssl_csr_new openssl_csr_sign openssl_decrypt openssl_dh_compute_key openssl_digest openssl_encrypt openssl_error_string openssl_free_key openssl_get_cert_locations openssl_get_cipher_methods openssl_get_md_methods openssl_get_privatekey openssl_get_publickey openssl_open openssl_pbkdf2 openssl_pkcs12_export_to_file openssl_pkcs12_export openssl_pkcs12_read openssl_pkcs7_decrypt openssl_pkcs7_encrypt openssl_pkcs7_sign openssl_pkcs7_verify openssl_pkey_export_to_file openssl_pkey_export openssl_pkey_free openssl_pkey_get_details openssl_pkey_get_private openssl_pkey_get_public openssl_pkey_new openssl_private_decrypt openssl_private_encrypt openssl_public_decrypt openssl_public_encrypt openssl_random_pseudo_bytes openssl_seal openssl_sign openssl_spki_export_challenge openssl_spki_export openssl_spki_new openssl_spki_verify openssl_verify openssl_x509_check_private_key openssl_x509_checkpurpose openssl_x509_export_to_file openssl_x509_export openssl_x509_fingerprint openssl_x509_free openssl_x509_parse openssl_x509_read  contained
 syn keyword phpFunctions  ora_bind ora_close ora_columnname ora_columnsize ora_columntype ora_commit ora_commitoff ora_commiton ora_do ora_error ora_errorcode ora_exec ora_fetch_into ora_fetch ora_getcolumn ora_logoff ora_logon ora_numcols ora_numrows ora_open ora_parse ora_plogon ora_rollback  contained
 syn keyword phpFunctions  flush ob_clean ob_end_clean ob_end_flush ob_flush ob_get_clean ob_get_contents ob_get_flush ob_get_length ob_get_level ob_get_status ob_gzhandler ob_implicit_flush ob_list_handlers ob_start output_add_rewrite_var output_reset_rewrite_vars  contained
 syn keyword phpFunctions  overload  contained
