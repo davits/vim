@@ -111,14 +111,15 @@ endfunc
 " Wait for up to a second for "expr" to become true.
 " Return time slept in milliseconds.  With the +reltime feature this can be
 " more than the actual waiting time.  Without +reltime it can also be less.
-func WaitFor(expr)
+func WaitFor(expr, ...)
+  let timeout = get(a:000, 0, 1000)
   " using reltime() is more accurate, but not always available
   if has('reltime')
     let start = reltime()
   else
     let slept = 0
   endif
-  for i in range(100)
+  for i in range(timeout / 10)
     try
       if eval(a:expr)
 	if has('reltime')
@@ -133,7 +134,7 @@ func WaitFor(expr)
     endif
     sleep 10m
   endfor
-  return 1000
+  return timeout
 endfunc
 
 " Wait for up to a given milliseconds.
@@ -165,15 +166,21 @@ func s:feedkeys(timer)
 endfunc
 
 " Get the command to run Vim, with -u NONE and --not-a-term arguments.
+" If there is an argument use it instead of "NONE".
 " Returns an empty string on error.
-func GetVimCommand()
+func GetVimCommand(...)
   if !filereadable('vimcmd')
     return ''
   endif
+  if a:0 == 0
+    let name = 'NONE'
+  else
+    let name = a:1
+  endif
   let cmd = readfile('vimcmd')[0]
-  let cmd = substitute(cmd, '-u \f\+', '-u NONE', '')
-  if cmd !~ '-u NONE'
-    let cmd = cmd . ' -u NONE'
+  let cmd = substitute(cmd, '-u \f\+', '-u ' . name, '')
+  if cmd !~ '-u '. name
+    let cmd = cmd . ' -u ' . name
   endif
   let cmd .= ' --not-a-term'
   let cmd = substitute(cmd, 'VIMRUNTIME=.*VIMRUNTIME;', '', '')
@@ -213,4 +220,8 @@ func RunVimPiped(before, after, arguments, pipecmd)
     call delete('Xafter.vim')
   endif
   return 1
+endfunc
+
+func CanRunGui()
+  return has('gui') && ($DISPLAY != "" || has('gui_running'))
 endfunc
