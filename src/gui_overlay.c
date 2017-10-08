@@ -74,8 +74,9 @@ get_counter_text(int i, int count)
     static const char*
 get_info_text(listitem_T* li)
 {
-    char* r = (char*)get_tv_string(&(li->li_tv));
-    return r;
+    return (char*)li->li_tv.vval.v_string;
+    //char* r = (char*)get_tv_string(&(li->li_tv));
+    //return r;
 }
 
     static void
@@ -330,6 +331,39 @@ build_overlay()
     gtk_widget_show_all(info_box);
 }
 
+    int
+find_info(list_T* items, int markup)
+{
+    static GtkLabel* label = 0;
+    if (label == 0) {
+	label = GTK_LABEL(gtk_label_new(NULL));
+    }
+    const char* current = gtk_label_get_text(GTK_LABEL(overlay->info));
+    listitem_T* item = items->lv_first;
+    for (int i = 0; i < items->lv_len; ++i, item = item->li_next) {
+	const char* item_str = 0;
+	if (markup) {
+	    gtk_label_set_markup(label, get_info_text(item));
+	    item_str = gtk_label_get_text(label);
+	} else {
+	    item_str = get_info_text(item);
+	}
+	if (strcmp(item_str, current) == 0) {
+	    return i + 1;
+	}
+    }
+    return 1;
+}
+
+    listitem_T*
+advance(listitem_T* item, int count)
+{
+    for (int i = 0; i < count && item != 0; ++i) {
+	item = item->li_next;
+    }
+    return item;
+}
+
     static void
 window_moved(GtkWindow* w, GdkEventConfigure* e, gpointer data)
 {
@@ -339,9 +373,13 @@ window_moved(GtkWindow* w, GdkEventConfigure* e, gpointer data)
     void
 overlay_show(long row, long col, list_T* items, int markup)
 {
+    int idx = 1;
     if (overlay == NULL) {
 	overlay = (Overlay*)alloc_clear(sizeof(Overlay));
     } else {
+	if (row == overlay->row && col == overlay->col) {
+	    idx = find_info(items, markup);
+	}
 	// free old list of items
 	list_unref(overlay->items);
     }
@@ -354,8 +392,10 @@ overlay_show(long row, long col, list_T* items, int markup)
 
     // hacky, add watch to prevent garbage collector from removing the list
     list_add_watch(overlay->items, &(overlay->selected));
-    overlay->selected.lw_item = overlay->items->lv_first;
-    overlay->sel_index = 1;
+    listitem_T* selected = advance(overlay->items->lv_first, idx - 1);
+    overlay->selected.lw_item = selected != 0 ? selected :
+						overlay->items->lv_first;
+    overlay->sel_index = selected != 0 ? idx : 1;
 
     if (overlay->window == NULL) {
 	build_overlay();
