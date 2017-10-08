@@ -670,11 +670,7 @@ static char *(features[]) =
 #else
 	"-user_commands",
 #endif
-#ifdef FEAT_WINDOWS
 	"+vertsplit",
-#else
-	"-vertsplit",
-#endif
 #ifdef FEAT_VIRTUALEDIT
 	"+virtualedit",
 #else
@@ -706,11 +702,7 @@ static char *(features[]) =
 #else
 	"-wildmenu",
 #endif
-#ifdef FEAT_WINDOWS
 	"+windows",
-#else
-	"-windows",
-#endif
 #ifdef FEAT_WRITEBACKUP
 	"+writebackup",
 #else
@@ -772,6 +764,188 @@ static char *(features[]) =
 
 static int included_patches[] =
 {   /* Add new patch number below this line */
+/**/
+    1183,
+/**/
+    1182,
+/**/
+    1181,
+/**/
+    1180,
+/**/
+    1179,
+/**/
+    1178,
+/**/
+    1177,
+/**/
+    1176,
+/**/
+    1175,
+/**/
+    1174,
+/**/
+    1173,
+/**/
+    1172,
+/**/
+    1171,
+/**/
+    1170,
+/**/
+    1169,
+/**/
+    1168,
+/**/
+    1167,
+/**/
+    1166,
+/**/
+    1165,
+/**/
+    1164,
+/**/
+    1163,
+/**/
+    1162,
+/**/
+    1161,
+/**/
+    1160,
+/**/
+    1159,
+/**/
+    1158,
+/**/
+    1157,
+/**/
+    1156,
+/**/
+    1155,
+/**/
+    1154,
+/**/
+    1153,
+/**/
+    1152,
+/**/
+    1151,
+/**/
+    1150,
+/**/
+    1149,
+/**/
+    1148,
+/**/
+    1147,
+/**/
+    1146,
+/**/
+    1145,
+/**/
+    1144,
+/**/
+    1143,
+/**/
+    1142,
+/**/
+    1141,
+/**/
+    1140,
+/**/
+    1139,
+/**/
+    1138,
+/**/
+    1137,
+/**/
+    1136,
+/**/
+    1135,
+/**/
+    1134,
+/**/
+    1133,
+/**/
+    1132,
+/**/
+    1131,
+/**/
+    1130,
+/**/
+    1129,
+/**/
+    1128,
+/**/
+    1127,
+/**/
+    1126,
+/**/
+    1125,
+/**/
+    1124,
+/**/
+    1123,
+/**/
+    1122,
+/**/
+    1121,
+/**/
+    1120,
+/**/
+    1119,
+/**/
+    1118,
+/**/
+    1117,
+/**/
+    1116,
+/**/
+    1115,
+/**/
+    1114,
+/**/
+    1113,
+/**/
+    1112,
+/**/
+    1111,
+/**/
+    1110,
+/**/
+    1109,
+/**/
+    1108,
+/**/
+    1107,
+/**/
+    1106,
+/**/
+    1105,
+/**/
+    1104,
+/**/
+    1103,
+/**/
+    1102,
+/**/
+    1101,
+/**/
+    1100,
+/**/
+    1099,
+/**/
+    1098,
+/**/
+    1097,
+/**/
+    1096,
+/**/
+    1095,
+/**/
+    1094,
+/**/
+    1093,
 /**/
     1092,
 /**/
@@ -3389,9 +3563,7 @@ maybe_intro_message(void)
 {
     if (BUFEMPTY()
 	    && curbuf->b_fname == NULL
-#ifdef FEAT_WINDOWS
 	    && firstwin->w_next == NULL
-#endif
 	    && vim_strchr(p_shm, SHM_INTRO) == NULL)
 	intro_message(FALSE);
 }
@@ -3464,11 +3636,9 @@ intro_message(
     if (!p_cp)
 	blanklines += 4;  /* add 4 for not showing "Vi compatible" message */
 
-#ifdef FEAT_WINDOWS
     /* Don't overwrite a statusline.  Depends on 'cmdheight'. */
     if (p_ls > 1)
 	blanklines -= Rows - topframe->fr_height;
-#endif
     if (blanklines < 0)
 	blanklines = 0;
 
