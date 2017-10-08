@@ -123,8 +123,8 @@ get_row_col_coordinates(int row, int col, int* x, int* y)
     if (curwin->w_nrwidth != 0) {
 	col += curwin->w_nrwidth + 1;
     }
-    *x = gui.char_width * (col - curwin->w_leftcol - 1);
-    *y = gui.char_height * (row - curwin->w_topline);
+    *x = gui.char_width * (col - curwin->w_leftcol - 1 + curwin->w_wincol);
+    *y = gui.char_height * (row - curwin->w_topline + curwin->w_winrow);
 }
 
     static void
