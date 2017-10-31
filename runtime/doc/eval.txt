@@ -1912,10 +1912,15 @@ v:termstyleresp	The escape sequence returned by the terminal for the |t_RS|
 		termcap entry.  This is used to find out what the shape of the
 		cursor is.  This is used by |term_getcursor()|.
 
-						*v:termrgbresp*
-v:termrgbresp	The escape sequence returned by the terminal for the |t_RB|
+						*v:termrbgresp*
+v:termrbgresp	The escape sequence returned by the terminal for the |t_RB|
 		termcap entry.  This is used to find out what the terminal
 		background color is, see 'background'.
+
+						*v:termrfgresp*
+v:termrfgresp	The escape sequence returned by the terminal for the |t_RF|
+		termcap entry.  This is used to find out what the terminal
+		foreground color is.
 
 						*v:termu7resp*
 v:termu7resp	The escape sequence returned by the terminal for the |t_u7|
@@ -3102,8 +3107,8 @@ char2nr({expr}[, {utf8}])					*char2nr()*
 			char2nr("ABC")		returns 65
 <		When {utf8} is omitted or zero, the current 'encoding' is used.
 		Example for "utf-8": >
-			char2nr("?")		returns 225
-			char2nr("?"[0])		returns 195
+			char2nr("á")		returns 225
+			char2nr("á"[0])		returns 195
 <		With {utf8} set to 1, always treat as utf-8 characters.
 		A combining character is a separate character.
 		|nr2char()| does the opposite.
@@ -6779,6 +6784,7 @@ searchpair({start}, {middle}, {end} [, {flags} [, {skip}
 		When {skip} is omitted or empty, every match is accepted.
 		When evaluating {skip} causes an error the search is aborted
 		and -1 returned.
+		{skip} can be a string, a lambda, a funcref or a partial.
 
 		For {stopline} and {timeout} see |search()|.
 
@@ -8872,9 +8878,8 @@ listcmds		Compiled with commands for the buffer list |:files|
 			and the argument list |arglist|.
 localmap		Compiled with local mappings and abbr. |:map-local|
 lua			Compiled with Lua interface |Lua|.
-mac			Any Macintosh version of Vim, but not all OS X.
-macunix			Compiled for OS X, with |mac-darwin-feature|
-osx			Compiled for OS X, with or w/o |mac-darwin-feature|
+mac			Any Macintosh version of Vim  cf. osx
+macunix			Synonym for osxdarwin
 menu			Compiled with support for |:menu|.
 mksession		Compiled with support for |:mksession|.
 modify_fname		Compiled with file name modifiers. |filename-modifiers|
@@ -8898,6 +8903,8 @@ netbeans_intg		Compiled with support for |netbeans|.
 num64			Compiled with 64-bit |Number| support.
 ole			Compiled with OLE automation support for Win32.
 overlay			Compiled with overlay popup window support.
+osx			Compiled for macOS  cf. mac
+osxdarwin		Compiled for macOS, with |mac-darwin-feature|
 packages		Compiled with |packages| support.
 path_extra		Compiled with up/downwards search in 'path' and 'tags'
 perl			Compiled with Perl interface.

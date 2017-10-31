@@ -765,6 +765,120 @@ static char *(features[]) =
 static int included_patches[] =
 {   /* Add new patch number below this line */
 /**/
+    1240,
+/**/
+    1239,
+/**/
+    1238,
+/**/
+    1237,
+/**/
+    1236,
+/**/
+    1235,
+/**/
+    1234,
+/**/
+    1233,
+/**/
+    1232,
+/**/
+    1231,
+/**/
+    1230,
+/**/
+    1229,
+/**/
+    1228,
+/**/
+    1227,
+/**/
+    1226,
+/**/
+    1225,
+/**/
+    1224,
+/**/
+    1223,
+/**/
+    1222,
+/**/
+    1221,
+/**/
+    1220,
+/**/
+    1219,
+/**/
+    1218,
+/**/
+    1217,
+/**/
+    1216,
+/**/
+    1215,
+/**/
+    1214,
+/**/
+    1213,
+/**/
+    1212,
+/**/
+    1211,
+/**/
+    1210,
+/**/
+    1209,
+/**/
+    1208,
+/**/
+    1207,
+/**/
+    1206,
+/**/
+    1205,
+/**/
+    1204,
+/**/
+    1203,
+/**/
+    1202,
+/**/
+    1201,
+/**/
+    1200,
+/**/
+    1199,
+/**/
+    1198,
+/**/
+    1197,
+/**/
+    1196,
+/**/
+    1195,
+/**/
+    1194,
+/**/
+    1193,
+/**/
+    1192,
+/**/
+    1191,
+/**/
+    1190,
+/**/
+    1189,
+/**/
+    1188,
+/**/
+    1187,
+/**/
+    1186,
+/**/
+    1185,
+/**/
+    1184,
+/**/
     1183,
 /**/
     1182,
@@ -3288,15 +3402,11 @@ list_version(void)
 #  endif
 # endif
 #endif
-#ifdef MACOS
-# ifdef MACOS_X
-#  ifdef MACOS_X_UNIX
-    MSG_PUTS(_("\nMacOS X (unix) version"));
-#  else
-    MSG_PUTS(_("\nMacOS X version"));
-#  endif
-#else
-    MSG_PUTS(_("\nMacOS version"));
+#if defined(MACOS_X)
+# if defined(MACOS_X_DARWIN)
+    MSG_PUTS(_("\nmacOS version"));
+# else
+    MSG_PUTS(_("\nmacOS version w/o darwin feat."));
 # endif
 #endif
 
@@ -3429,9 +3539,6 @@ list_version(void)
 #	 if defined(TARGET_API_MAC_OSX) && TARGET_API_MAC_OSX
     MSG_PUTS(_("with Cocoa GUI."));
 #	 else
-#	  if defined(MACOS)
-    MSG_PUTS(_("with (classic) GUI."));
-#	  endif
 #	 endif
 #	endif
 #      endif
