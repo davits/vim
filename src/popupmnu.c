@@ -265,6 +265,8 @@ pum_display(
 	 * redo the positioning.  Limit this to two times, when there is not
 	 * much room the window size will keep changing. */
     } while (pum_set_selected(selected, redo_count) && ++redo_count <= 2);
+    // Notify popup selection change
+    apply_autocmds(EVENT_POPUPSELCHANGED, NULL, NULL, FALSE, curbuf);
 }
 
 /*
@@ -754,6 +756,15 @@ pum_visible(void)
 pum_get_height(void)
 {
     return pum_height;
+}
+
+/*
+ * Return currently selected item index or -1 if none is selected.
+ */
+    int
+pum_get_selected(void)
+{
+    return pum_selected;
 }
 
 #endif

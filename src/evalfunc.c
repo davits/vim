@@ -296,6 +296,7 @@ static void f_pow(typval_T *argvars, typval_T *rettv);
 #endif
 static void f_prevnonblank(typval_T *argvars, typval_T *rettv);
 static void f_printf(typval_T *argvars, typval_T *rettv);
+static void f_pumselected(typval_T *argvars, typval_T *rettv);
 static void f_pumvisible(typval_T *argvars, typval_T *rettv);
 #ifdef FEAT_PYTHON3
 static void f_py3eval(typval_T *argvars, typval_T *rettv);
@@ -740,6 +741,7 @@ static struct fst
 #endif
     {"prevnonblank",	1, 1, f_prevnonblank},
     {"printf",		2, 19, f_printf},
+    {"pumselected",	0, 0, f_pumselected},
     {"pumvisible",	0, 0, f_pumvisible},
 #ifdef FEAT_PYTHON3
     {"py3eval",		1, 1, f_py3eval},
@@ -8140,6 +8142,20 @@ f_printf(typval_T *argvars, typval_T *rettv)
 	}
     }
     did_emsg |= saved_did_emsg;
+}
+
+/*
+ * "pumselected()" function
+ */
+    static void
+f_pumselected(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
+{
+#ifdef FEAT_INS_EXPAND
+    if (pum_visible())
+	rettv->vval.v_number = pum_get_selected();
+    else
+	rettv->vval.v_number = -1;
+#endif
 }
 
 /*

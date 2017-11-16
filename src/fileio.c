@@ -7748,6 +7748,7 @@ static struct event_name
     {"InsertCharPre",	EVENT_INSERTCHARPRE},
     {"MenuPopup",	EVENT_MENUPOPUP},
     {"OptionSet",	EVENT_OPTIONSET},
+    {"PopupSelChanged",	EVENT_POPUPSELCHANGED},
     {"QuickFixCmdPost",	EVENT_QUICKFIXCMDPOST},
     {"QuickFixCmdPre",	EVENT_QUICKFIXCMDPRE},
     {"QuitPre",		EVENT_QUITPRE},

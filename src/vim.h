@@ -1304,6 +1304,7 @@ enum auto_event
     EVENT_INSERTENTER,		/* when entering Insert mode */
     EVENT_INSERTLEAVE,		/* when leaving Insert mode */
     EVENT_MENUPOPUP,		/* just before popup menu is displayed */
+    EVENT_POPUPSELCHANGED,	/* after popup menu selection is changed */
     EVENT_QUICKFIXCMDPOST,	/* after :make, :grep etc. */
     EVENT_QUICKFIXCMDPRE,	/* before :make, :grep etc. */
     EVENT_QUITPRE,		/* before :quit */
