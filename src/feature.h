@@ -635,7 +635,8 @@
 /* #define FEAT_MBYTE_IME */
 # endif
 
-#if defined(FEAT_MBYTE_IME) && !defined(FEAT_MBYTE)
+/* Input methods are only useful with +multi_byte. */
+#if (defined(FEAT_MBYTE_IME) || defined(FEAT_XIM)) && !defined(FEAT_MBYTE)
 # define FEAT_MBYTE
 #endif
 
@@ -1168,6 +1169,20 @@
 #endif
 
 /*
+ * +autoservername	Automatically generate a servername for clientserver
+ *			when --servername is not passed on the command line.
+ */
+#if defined(FEAT_CLIENTSERVER) && !defined(FEAT_AUTOSERVERNAME)
+# ifdef WIN3264
+    /* Always enabled on MS-Windows. */
+#  define FEAT_AUTOSERVERNAME
+# else
+    /* Enable here if you don't use configure. */
+/* # define FEAT_AUTOSERVERNAME */
+# endif
+#endif
+
+/*
  * +termresponse	send t_RV to obtain terminal response.  Used for xterm
  *			to check if mouse dragging can be used and if term
  *			codes can be obtained.
@@ -1303,7 +1318,7 @@
 		&& !defined(FEAT_GUI_GTK) && !defined(FEAT_GUI_W32)) \
 	    || defined(FEAT_SUN_WORKSHOP) \
 	    || defined(FEAT_NETBEANS_INTG) || defined(FEAT_EVAL))
-# define FEAT_BEVAL
+# define FEAT_BEVAL_GUI
 # if !defined(FEAT_XFONTSET) && !defined(FEAT_GUI_GTK) \
 	&& !defined(FEAT_GUI_W32)
 #  define FEAT_XFONTSET
@@ -1318,8 +1333,19 @@
 # define FEAT_OVERLAY
 #endif
 
-#if defined(FEAT_BEVAL) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
+#if defined(FEAT_BEVAL_GUI) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
 # define FEAT_BEVAL_TIP		/* balloon eval used for toolbar tooltip */
+#endif
+
+/*
+ * +balloon_eval_term	Allow balloon expression evaluation in the terminal.
+ */
+#if defined(FEAT_HUGE) && defined(UNIX) && defined(FEAT_TIMERS)
+# define FEAT_BEVAL_TERM
+#endif
+
+#if defined(FEAT_BEVAL_GUI) || defined(FEAT_BEVAL_TERM)
+# define FEAT_BEVAL
 #endif
 
 /* both Motif and Athena are X11 and share some code */

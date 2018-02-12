@@ -164,13 +164,30 @@ trigger_cmd_autocmd(int typechar, int evt)
     static void
 abandon_cmdline(void)
 {
-    vim_free(ccline.cmdbuff);
-    ccline.cmdbuff = NULL;
+    VIM_CLEAR(ccline.cmdbuff);
     if (msg_scrolled == 0)
 	compute_cmdrow();
     MSG("");
     redraw_cmdline = TRUE;
 }
+
+#ifdef FEAT_SEARCH_EXTRA
+/*
+ * Guess that the pattern matches everything.  Only finds specific cases, such
+ * as a trailing \|, which can happen while typing a pattern.
+ */
+    static int
+empty_pattern(char_u *p)
+{
+    size_t n = STRLEN(p);
+
+    /* remove trailing \v and the like */
+    while (n >= 2 && p[n - 2] == '\\'
+			  && vim_strchr((char_u *)"mMvVcCZ", p[n - 1]) != NULL)
+	n -= 2;
+    return n == 0 || (n >= 2 && p[n - 2] == '\\' && p[n - 1] == '|');
+}
+#endif
 
 /*
  * getcmdline() - accept a command line starting with firstc.
@@ -220,7 +237,7 @@ getcmdline(
     pos_T       match_end;
 # ifdef FEAT_DIFF
     int		old_topfill;
-    int         init_topfill = curwin->w_topfill;
+    int		init_topfill = curwin->w_topfill;
 # endif
     linenr_T	old_botline;
     linenr_T	init_botline = curwin->w_botline;
@@ -359,11 +376,11 @@ getcmdline(
 	    b_im_ptr = &curbuf->b_p_imsearch;
 	if (*b_im_ptr == B_IMODE_LMAP)
 	    State |= LANGMAP;
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
 	im_set_active(*b_im_ptr == B_IMODE_IM);
 #endif
     }
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
     else if (p_imcmdline)
 	im_set_active(TRUE);
 #endif
@@ -417,12 +434,12 @@ getcmdline(
 
 	cursorcmd();		/* set the cursor on the right spot */
 
-	/* Get a character.  Ignore K_IGNORE, it should not do anything, such
-	 * as stop completion. */
+	/* Get a character.  Ignore K_IGNORE and K_NOP, they should not do
+	 * anything, such as stop completion. */
 	do
 	{
 	    c = safe_vgetc();
-	} while (c == K_IGNORE);
+	} while (c == K_IGNORE || c == K_NOP);
 
 	if (KeyTyped)
 	{
@@ -482,10 +499,7 @@ getcmdline(
 		&& c != K_KPAGEDOWN && c != K_KPAGEUP
 		&& c != K_LEFT && c != K_RIGHT
 		&& (xpc.xp_numfiles > 0 || (c != Ctrl_P && c != Ctrl_N)))
-	{
-	    vim_free(lookfor);
-	    lookfor = NULL;
-	}
+	    VIM_CLEAR(lookfor);
 #endif
 
 	/*
@@ -1078,8 +1092,7 @@ getcmdline(
 			    )
 			goto cmdline_not_changed;
 
-		    vim_free(ccline.cmdbuff);	/* no commandline to return */
-		    ccline.cmdbuff = NULL;
+		    VIM_CLEAR(ccline.cmdbuff);	/* no commandline to return */
 		    if (!cmd_silent)
 		    {
 #ifdef FEAT_RIGHTLEFT
@@ -1119,7 +1132,7 @@ getcmdline(
 		{
 		    /* ":lmap" mappings exists, toggle use of mappings. */
 		    State ^= LANGMAP;
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
 		    im_set_active(FALSE);	/* Disable input method */
 #endif
 		    if (b_im_ptr != NULL)
@@ -1130,7 +1143,7 @@ getcmdline(
 			    *b_im_ptr = B_IMODE_NONE;
 		    }
 		}
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
 		else
 		{
 		    /* There are no ":lmap" mappings, toggle IM.  When
@@ -1452,6 +1465,7 @@ getcmdline(
 	case K_X2MOUSE:
 	case K_X2DRAG:
 	case K_X2RELEASE:
+	case K_MOUSEMOVE:
 		goto cmdline_not_changed;
 
 #endif	/* FEAT_MOUSE */
@@ -1715,7 +1729,16 @@ getcmdline(
 		if (p_is && !cmd_silent && (firstc == '/' || firstc == '?'))
 		{
 		    pos_T  t;
+		    char_u *pat;
 		    int    search_flags = SEARCH_NOOF;
+
+		    if (ccline.cmdlen == 0)
+			goto cmdline_not_changed;
+
+		    if (firstc == ccline.cmdbuff[0])
+			pat = last_search_pattern();
+		    else
+			pat = ccline.cmdbuff;
 
 		    save_last_search_pattern();
 		    cursor_off();
@@ -1723,6 +1746,10 @@ getcmdline(
 		    if (c == Ctrl_G)
 		    {
 			t = match_end;
+			if (LT_POS(match_start, match_end))
+			    /* start searching at the end of the match
+			     * not at the beginning of the next column */
+			    (void)decl(&t);
 			search_flags += SEARCH_COL;
 		    }
 		    else
@@ -1732,7 +1759,7 @@ getcmdline(
 		    ++emsg_off;
 		    i = searchit(curwin, curbuf, &t,
 				 c == Ctrl_G ? FORWARD : BACKWARD,
-				 ccline.cmdbuff, count, search_flags,
+				 pat, count, search_flags,
 				 RE_SEARCH, 0, NULL, NULL);
 		    --emsg_off;
 		    if (i)
@@ -1780,11 +1807,11 @@ getcmdline(
 # endif
 			old_botline = curwin->w_botline;
 			update_screen(NOT_VALID);
-			restore_last_search_pattern();
 			redrawcmdline();
 		    }
 		    else
 			vim_beep(BO_ERROR);
+		    restore_last_search_pattern();
 		    goto cmdline_not_changed;
 		}
 		break;
@@ -1919,6 +1946,11 @@ cmdline_not_changed:
 #endif
 
 cmdline_changed:
+#ifdef FEAT_AUTOCMD
+	/* Trigger CmdlineChanged autocommands. */
+	trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINECHANGED);
+#endif
+
 #ifdef FEAT_SEARCH_EXTRA
 	/*
 	 * 'incsearch' highlighting.
@@ -1945,6 +1977,7 @@ cmdline_changed:
 	    {
 		i = 0;
 		SET_NO_HLSEARCH(TRUE); /* turn off previous highlight */
+		redraw_all_later(SOME_VALID);
 	    }
 	    else
 	    {
@@ -2007,6 +2040,11 @@ cmdline_changed:
 	    }
 	    else
 		end_pos = curwin->w_cursor; /* shutup gcc 4 */
+
+	    /* Disable 'hlsearch' highlighting if the pattern matches
+	     * everything. Avoids a flash when typing "foo\|". */
+	    if (empty_pattern(ccline.cmdbuff))
+		SET_NO_HLSEARCH(TRUE);
 
 	    validate_cursor();
 	    /* May redraw the status line to show the cursor position. */
@@ -2082,7 +2120,7 @@ returncmd:
 	curwin->w_botline = old_botline;
 	highlight_match = FALSE;
 	validate_cursor();	/* needed for TAB */
-	redraw_later(SOME_VALID);
+	redraw_all_later(SOME_VALID);
     }
 #endif
 
@@ -2128,7 +2166,7 @@ returncmd:
 #endif
 
     State = save_State;
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
     if (b_im_ptr != NULL && *b_im_ptr != B_IMODE_LMAP)
 	im_save_status(b_im_ptr);
     im_set_active(FALSE);
@@ -3640,10 +3678,7 @@ nextwild(
 			     || ccline.cmdbuff[i + j] == '?')
 			 break;
 		if ((int)STRLEN(p2) < j)
-		{
-		    vim_free(p2);
-		    p2 = NULL;
-		}
+		    VIM_CLEAR(p2);
 	    }
 	}
     }
@@ -3789,8 +3824,7 @@ ExpandOne(
     {
 	FreeWild(xp->xp_numfiles, xp->xp_files);
 	xp->xp_numfiles = -1;
-	vim_free(orig_save);
-	orig_save = NULL;
+	VIM_CLEAR(orig_save);
     }
     findex = 0;
 
@@ -5281,8 +5315,9 @@ ExpandUserDefined(
     char_u	*retstr;
     char_u	*s;
     char_u	*e;
-    char_u      keep;
+    int		keep;
     garray_T	ga;
+    int		skip;
 
     retstr = call_user_expand_func(call_func_retstr, xp, num_file, file);
     if (retstr == NULL)
@@ -5295,23 +5330,19 @@ ExpandUserDefined(
 	if (e == NULL)
 	    e = s + STRLEN(s);
 	keep = *e;
-	*e = 0;
+	*e = NUL;
 
-	if (xp->xp_pattern[0] && vim_regexec(regmatch, s, (colnr_T)0) == 0)
+	skip = xp->xp_pattern[0] && vim_regexec(regmatch, s, (colnr_T)0) == 0;
+	*e = keep;
+
+	if (!skip)
 	{
-	    *e = keep;
-	    if (*e != NUL)
-		++e;
-	    continue;
+	    if (ga_grow(&ga, 1) == FAIL)
+		break;
+	    ((char_u **)ga.ga_data)[ga.ga_len] = vim_strnsave(s, (int)(e - s));
+	    ++ga.ga_len;
 	}
 
-	if (ga_grow(&ga, 1) == FAIL)
-	    break;
-
-	((char_u **)ga.ga_data)[ga.ga_len] = vim_strnsave(s, (int)(e - s));
-	++ga.ga_len;
-
-	*e = keep;
 	if (*e != NUL)
 	    ++e;
     }
@@ -6694,8 +6725,7 @@ finish_viminfo_history(vir_T *virp)
 	else
 	    concat_history(type);
 
-	vim_free(viminfo_history[type]);
-	viminfo_history[type] = NULL;
+	VIM_CLEAR(viminfo_history[type]);
 	viminfo_hisidx[type] = 0;
     }
 }
@@ -6819,8 +6849,7 @@ write_viminfo_history(FILE *fp, int merge)
 	for (i = 0; i < viminfo_hisidx[type]; ++i)
 	    if (viminfo_history[type] != NULL)
 		vim_free(viminfo_history[type][i].hisstr);
-	vim_free(viminfo_history[type]);
-	viminfo_history[type] = NULL;
+	VIM_CLEAR(viminfo_history[type]);
 	viminfo_hisidx[type] = 0;
     }
 }

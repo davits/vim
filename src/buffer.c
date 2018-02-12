@@ -593,6 +593,11 @@ aucmd_abort:
     if (buf->b_nwindows > 0)
 	--buf->b_nwindows;
 
+#ifdef FEAT_DIFF
+    if (diffopt_hiddenoff() && !unload_buf && buf->b_nwindows == 0)
+	diff_buf_delete(buf);	/* Clear 'diff' for hidden buffer. */
+#endif
+
     /* Return when a window is displaying the buffer or when it's not
      * unloaded. */
     if (buf->b_nwindows > 0 || !unload_buf)
@@ -651,9 +656,6 @@ aucmd_abort:
     if (buf->b_nwindows > 0)
 	--buf->b_nwindows;
 #endif
-
-    /* Change directories when the 'acd' option is set. */
-    DO_AUTOCHDIR
 
     /*
      * Remove the buffer from the list.
@@ -942,8 +944,7 @@ free_buffer_stuff(
     map_clear_int(buf, MAP_ALL_MODES, TRUE, TRUE);   /* clear local abbrevs */
 #endif
 #ifdef FEAT_MBYTE
-    vim_free(buf->b_start_fenc);
-    buf->b_start_fenc = NULL;
+    VIM_CLEAR(buf->b_start_fenc);
 #endif
 }
 
@@ -1660,7 +1661,8 @@ set_curbuf(buf_T *buf, int action)
 #ifdef FEAT_SYN_HL
     long	old_tw = curbuf->b_p_tw;
 #endif
-    bufref_T	bufref;
+    bufref_T	newbufref;
+    bufref_T	prevbufref;
 
     setpcmark();
     if (!cmdmod.keepalt)
@@ -1670,18 +1672,22 @@ set_curbuf(buf_T *buf, int action)
     /* Don't restart Select mode after switching to another buffer. */
     VIsual_reselect = FALSE;
 
-    /* close_windows() or apply_autocmds() may change curbuf */
+    /* close_windows() or apply_autocmds() may change curbuf and wipe out "buf"
+     */
     prevbuf = curbuf;
-    set_bufref(&bufref, prevbuf);
+    set_bufref(&prevbufref, prevbuf);
+    set_bufref(&newbufref, buf);
 
 #ifdef FEAT_AUTOCMD
+    /* Autocommands may delete the curren buffer and/or the buffer we wan to go
+     * to.  In those cases don't close the buffer. */
     if (!apply_autocmds(EVENT_BUFLEAVE, NULL, NULL, FALSE, curbuf)
+	    || (bufref_valid(&prevbufref)
+		&& bufref_valid(&newbufref)
 # ifdef FEAT_EVAL
-	    || (bufref_valid(&bufref) && !aborting())
-# else
-	    || bufref_valid(&bufref)
+		&& !aborting()
 # endif
-       )
+	       ))
 #endif
     {
 #ifdef FEAT_SYN_HL
@@ -1691,9 +1697,9 @@ set_curbuf(buf_T *buf, int action)
 	if (unload)
 	    close_windows(prevbuf, FALSE);
 #if defined(FEAT_AUTOCMD) && defined(FEAT_EVAL)
-	if (bufref_valid(&bufref) && !aborting())
+	if (bufref_valid(&prevbufref) && !aborting())
 #else
-	if (bufref_valid(&bufref))
+	if (bufref_valid(&prevbufref))
 #endif
 	{
 	    win_T  *previouswin = curwin;
@@ -1852,7 +1858,7 @@ do_autochdir(void)
 {
     if ((starting == 0 || test_autochdir)
 	    && curbuf->b_ffname != NULL
-	    && vim_chdirfile(curbuf->b_ffname) == OK)
+	    && vim_chdirfile(curbuf->b_ffname, "auto") == OK)
 	shorten_fnames(TRUE);
 }
 #endif
@@ -2030,10 +2036,8 @@ buflist_new(
     if ((ffname != NULL && (buf->b_ffname == NULL || buf->b_sfname == NULL))
 	    || buf->b_wininfo == NULL)
     {
-	vim_free(buf->b_ffname);
-	buf->b_ffname = NULL;
-	vim_free(buf->b_sfname);
-	buf->b_sfname = NULL;
+	VIM_CLEAR(buf->b_ffname);
+	VIM_CLEAR(buf->b_sfname);
 	if (buf != curbuf)
 	    free_buffer(buf);
 	return NULL;
@@ -2202,6 +2206,7 @@ free_buf_options(
     clear_string_option(&buf->b_p_isk);
 #ifdef FEAT_KEYMAP
     clear_string_option(&buf->b_p_keymap);
+    keymap_clear(&buf->b_kmap_ga);
     ga_clear(&buf->b_kmap_ga);
 #endif
 #ifdef FEAT_COMMENTS
@@ -3128,10 +3133,8 @@ setfname(
     if (ffname == NULL || *ffname == NUL)
     {
 	/* Removing the name. */
-	vim_free(buf->b_ffname);
-	vim_free(buf->b_sfname);
-	buf->b_ffname = NULL;
-	buf->b_sfname = NULL;
+	VIM_CLEAR(buf->b_ffname);
+	VIM_CLEAR(buf->b_sfname);
 #ifdef UNIX
 	st.st_dev = (dev_T)-1;
 #endif
@@ -4253,8 +4256,7 @@ build_stl_str_hl(
 		if (*skipdigits(str) == NUL)
 		{
 		    num = atoi((char *)str);
-		    vim_free(str);
-		    str = NULL;
+		    VIM_CLEAR(str);
 		    itemisflag = FALSE;
 		}
 	    }

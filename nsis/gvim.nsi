@@ -89,6 +89,11 @@ Page instfiles
 UninstPage uninstConfirm
 UninstPage instfiles
 
+# Reserve files
+# Needed for showing the _vimrc setting page faster.
+ReserveFile /plugin InstallOptions.dll
+ReserveFile vimrc.ini
+
 ##########################################################
 # Functions
 
@@ -267,6 +272,9 @@ Section "Vim executables and runtime files"
 
 	SetOutPath $0\autoload
 	File ${VIMRT}\autoload\*.*
+
+	SetOutPath $0\autoload\dist
+	File ${VIMRT}\autoload\dist\*.*
 
 	SetOutPath $0\autoload\xml
 	File ${VIMRT}\autoload\xml\*.*
@@ -472,14 +480,12 @@ Function SetCustom
 	# Display the InstallOptions dialog
 
 	# Check if a _vimrc should be created
-	SectionGetFlags ${sec_vimrc_id} $0
-	IntOp $0 $0 & 1
-	StrCmp $0 "1" +2 0
+	SectionGetFlags ${sec_vimrc_id} $3
+	IntOp $3 $3 & 1
+	StrCmp $3 "1" +2 0
 	  Abort
 
-	Push $3
-	  InstallOptions::dialog "$PLUGINSDIR\vimrc.ini"
-	  Pop $3
+	InstallOptions::dialog "$PLUGINSDIR\vimrc.ini"
 	Pop $3
 FunctionEnd
 

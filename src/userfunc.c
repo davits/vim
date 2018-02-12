@@ -1594,7 +1594,7 @@ trans_function_name(
 	start += lead;
 
     /* Note that TFN_ flags use the same values as GLV_ flags. */
-    end = get_lval(start, NULL, &lv, FALSE, skip, flags,
+    end = get_lval(start, NULL, &lv, FALSE, skip, flags | GLV_READ_ONLY,
 					      lead > 2 ? 0 : FNE_CHECK_START);
     if (end == start)
     {
@@ -1886,7 +1886,7 @@ ex_function(exarg_T *eap)
      * g:func	    global function name, same as "func"
      */
     p = eap->arg;
-    name = trans_function_name(&p, eap->skip, 0, &fudi, NULL);
+    name = trans_function_name(&p, eap->skip, TFN_NO_AUTOLOAD, &fudi, NULL);
     paren = (vim_strchr(p, '(') != NULL);
     if (name == NULL && (fudi.fd_dict == NULL || !paren) && !eap->skip)
     {
@@ -2122,10 +2122,7 @@ ex_function(exarg_T *eap)
 	    /* between ":append" and "." and between ":python <<EOF" and "EOF"
 	     * don't check for ":endfunc". */
 	    if (STRCMP(theline, skip_until) == 0)
-	    {
-		vim_free(skip_until);
-		skip_until = NULL;
-	    }
+		VIM_CLEAR(skip_until);
 	}
 	else
 	{
@@ -2295,8 +2292,7 @@ ex_function(exarg_T *eap)
 		/* redefine existing function */
 		ga_clear_strings(&(fp->uf_args));
 		ga_clear_strings(&(fp->uf_lines));
-		vim_free(name);
-		name = NULL;
+		VIM_CLEAR(name);
 	    }
 	}
     }
@@ -2972,6 +2968,9 @@ ex_return(exarg_T *eap)
     /* It's safer to return also on error. */
     else if (!eap->skip)
     {
+	/* In return statement, cause_abort should be force_abort. */
+	update_force_abort();
+
 	/*
 	 * Return unless the expression evaluation has been cancelled due to an
 	 * aborting error, an interrupt, or an exception.
@@ -3086,6 +3085,8 @@ ex_call(exarg_T *eap)
 	    failed = TRUE;
 	    break;
 	}
+	if (has_watchexpr())
+	    dbg_check_breakpoint(eap);
 
 	/* Handle a function returning a Funcref, Dictionary or List. */
 	if (handle_subscript(&arg, &rettv, !eap->skip, TRUE) == FAIL)

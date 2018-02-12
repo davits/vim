@@ -535,8 +535,7 @@ ml_set_crypt_key(
 	idx = 0;		/* start with first index in block 1 */
 	error = 0;
 	buf->b_ml.ml_stack_top = 0;
-	vim_free(buf->b_ml.ml_stack);
-	buf->b_ml.ml_stack = NULL;
+	VIM_CLEAR(buf->b_ml.ml_stack);
 	buf->b_ml.ml_stack_size = 0;	/* no stack yet */
 
 	for ( ; !got_int; line_breakcheck())
@@ -852,8 +851,7 @@ ml_close(buf_T *buf, int del_file)
 	vim_free(buf->b_ml.ml_line_ptr);
     vim_free(buf->b_ml.ml_stack);
 #ifdef FEAT_BYTEOFF
-    vim_free(buf->b_ml.ml_chunksize);
-    buf->b_ml.ml_chunksize = NULL;
+    VIM_CLEAR(buf->b_ml.ml_chunksize);
 #endif
     buf->b_ml.ml_mfp = NULL;
 
@@ -1139,7 +1137,7 @@ ml_recover(void)
     attr = HL_ATTR(HLF_E);
 
     /*
-     * If the file name ends in ".s[uvw][a-z]" we assume this is the swap file.
+     * If the file name ends in ".s[a-w][a-z]" we assume this is the swap file.
      * Otherwise a search is done to find the swap file(s).
      */
     fname = curbuf->b_fname;
@@ -1153,7 +1151,8 @@ ml_recover(void)
 	    STRNICMP(fname + len - 4, ".s", 2)
 #endif
 						== 0
-		&& vim_strchr((char_u *)"UVWuvw", fname[len - 2]) != NULL
+		&& vim_strchr((char_u *)"abcdefghijklmnopqrstuvw",
+					   TOLOWER_ASC(fname[len - 2])) != NULL
 		&& ASCII_ISALPHA(fname[len - 1]))
     {
 	directly = TRUE;
@@ -4196,8 +4195,7 @@ findswapname(
 	    break;
 	if ((n = (int)STRLEN(fname)) == 0)	/* safety check */
 	{
-	    vim_free(fname);
-	    fname = NULL;
+	    VIM_CLEAR(fname);
 	    break;
 	}
 #if defined(UNIX)
@@ -4577,8 +4575,7 @@ findswapname(
 	    if (fname[n - 2] == 'a')    /* ".saa": tried enough, give up */
 	    {
 		EMSG(_("E326: Too many swap files found"));
-		vim_free(fname);
-		fname = NULL;
+		VIM_CLEAR(fname);
 		break;
 	    }
 	    --fname[n - 2];		/* ".svz", ".suz", etc. */

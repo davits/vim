@@ -25,12 +25,15 @@
 #
 #	GUI interface: GUI=yes (default is no)
 #
-#	GUI with DirectWrite(DirectX): DIRECTX=yes
-#	  (default is no, requires GUI=yes)
+#	GUI with DirectWrite (DirectX): DIRECTX=yes
+#	  (default is no, requires GUI=yes and MBYTE=yes)
+#
+#	Color emoji support: COLOR_EMOJI=yes
+#	  (default is yes if DIRECTX=yes, requires WinSDK 8.1 or later.)
 #
 #	OLE interface: OLE=yes (usually with GUI=yes)
 #
-#	Multibyte support: MBYTE=yes (default is no)
+#	Multibyte support: MBYTE=yes (default is yes for NORMAL, BIG, HUGE)
 #
 #	IME support: IME=yes	(requires GUI=yes)
 #	  DYNAMIC_IME=[yes or no]  (to load the imm32.dll dynamically, default
@@ -67,7 +70,7 @@
 #	Python3 interface:
 #	  PYTHON3=[Path to Python3 directory]
 #	  DYNAMIC_PYTHON3=yes (to load the Python3 DLL dynamically)
-#	  PYTHON3_VER=[Python3 version, eg 30, 31]  (default is 35)
+#	  PYTHON3_VER=[Python3 version, eg 30, 31]  (default is 36)
 #
 #	Ruby interface:
 #	  RUBY=[Path to Ruby directory]
@@ -286,7 +289,8 @@ MSVC_MAJOR = ($(MSVCVER) / 100 - 6)
 MSVCRT_VER = ($(MSVCVER) / 10 - 60)
 # Visual C++ 2017 needs special handling
 # it has an _MSC_VER of 1910->14.1, but is actually v15 with runtime v140
-!elseif $(MSVCVER) == 1910
+# TODO: what's the maximum value?
+!elseif $(MSVCVER) >= 1910
 MSVC_MAJOR = 15
 MSVCRT_VER = 140
 !else
@@ -419,9 +423,12 @@ NBDEBUG_SRC	= nbdebug.c
 NETBEANS_LIB	= WSock32.lib
 !endif
 
-# DirectWrite(DirectX)
+# DirectWrite (DirectX)
 !if "$(DIRECTX)" == "yes"
 DIRECTX_DEFS	= -DFEAT_DIRECTX -DDYNAMIC_DIRECTX
+!if "$(COLOR_EMOJI)" != "no"
+DIRECTX_DEFS	= $(DIRECTX_DEFS) -DFEAT_DIRECTX_COLOR_EMOJI
+!endif
 DIRECTX_INCL	= gui_dwrite.h
 DIRECTX_OBJ	= $(OUTDIR)\gui_dwrite.obj
 !endif
@@ -683,10 +690,11 @@ CFLAGS = $(CFLAGS) /Zl /MTd
 
 INCL =	vim.h alloc.h arabic.h ascii.h ex_cmds.h farsi.h feature.h globals.h \
 	keymap.h macros.h option.h os_dos.h os_win32.h proto.h regexp.h \
-	spell.h structs.h term.h $(NBDEBUG_INCL)
+	spell.h structs.h term.h beval.h $(NBDEBUG_INCL)
 
 OBJ = \
 	$(OUTDIR)\arabic.obj \
+	$(OUTDIR)\beval.obj \
 	$(OUTDIR)\blowfish.obj \
 	$(OUTDIR)\buffer.obj \
 	$(OUTDIR)\charset.obj \
@@ -781,8 +789,7 @@ CFLAGS = $(CFLAGS) -DFEAT_GUI_W32
 RCFLAGS = $(RCFLAGS) -DFEAT_GUI_W32
 VIM = g$(VIM)
 GUI_INCL = \
-	gui.h \
-	gui_beval.h
+	gui.h
 GUI_OBJ = \
 	$(OUTDIR)\gui.obj \
 	$(OUTDIR)\gui_beval.obj \
@@ -906,7 +913,7 @@ PYTHON_LIB = $(PYTHON)\libs\python$(PYTHON_VER).lib
 # PYTHON3 interface
 !ifdef PYTHON3
 !ifndef PYTHON3_VER
-PYTHON3_VER = 35
+PYTHON3_VER = 36
 !endif
 !message Python3 requested (version $(PYTHON3_VER)) - root dir is "$(PYTHON3)"
 !if "$(DYNAMIC_PYTHON3)" == "yes"
@@ -1173,6 +1180,13 @@ LINKARGS1 = $(LINKARGS1) /LTCG:STATUS
 !endif
 !endif
 
+!if $(MSVC_MAJOR) >= 11 && "$(CPU)" == "AMD64" && "$(GUI)" == "yes"
+# This option is required for VC2012 or later so that 64-bit gvim can
+# accept D&D from 32-bit applications.  NOTE: This disables 64-bit ASLR,
+# therefore the security level becomes as same as VC2010.
+LINKARGS1 = $(LINKARGS1) /HIGHENTROPYVA:NO
+!endif
+
 all:	$(VIM).exe \
 	vimrun.exe \
 	install.exe \
@@ -1296,6 +1310,8 @@ testclean:
 	$(CC) $(CFLAGS_OUTDIR) $<
 
 $(OUTDIR)/arabic.obj:	$(OUTDIR) arabic.c  $(INCL)
+
+$(OUTDIR)/beval.obj:	$(OUTDIR) beval.c  $(INCL)
 
 $(OUTDIR)/blowfish.obj:	$(OUTDIR) blowfish.c  $(INCL)
 

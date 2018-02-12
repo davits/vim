@@ -393,6 +393,12 @@ restore_last_search_pattern(void)
     last_idx = saved_last_idx;
     SET_NO_HLSEARCH(saved_no_hlsearch);
 }
+
+    char_u *
+last_search_pattern(void)
+{
+    return spats[RE_SEARCH].pat;
+}
 #endif
 
 /*
@@ -415,7 +421,7 @@ ignorecase_opt(char_u *pat, int ic_in, int scs)
 
     if (ic && !no_smartcase && scs
 #ifdef FEAT_INS_EXPAND
-				&& !(ctrl_x_mode && curbuf->b_p_inf)
+			     && !(ctrl_x_mode_not_default() && curbuf->b_p_inf)
 #endif
 								    )
 	ic = !pat_has_uppercase(pat);
@@ -678,11 +684,11 @@ searchit(
 		    && pos->lnum >= 1 && pos->lnum <= buf->b_ml.ml_line_count
 						    && pos->col < MAXCOL - 2)
 	{
-	    ptr = ml_get_buf(buf, pos->lnum, FALSE) + pos->col;
-	    if (*ptr == NUL)
+	    ptr = ml_get_buf(buf, pos->lnum, FALSE);
+	    if ((int)STRLEN(ptr) <= pos->col)
 		start_char_len = 1;
 	    else
-		start_char_len = (*mb_ptr2len)(ptr);
+		start_char_len = (*mb_ptr2len)(ptr + pos->col);
 	}
 #endif
 	else
@@ -967,7 +973,16 @@ searchit(
 					      NULL, NULL
 #endif
 					    )) == 0)
+			    {
+#ifdef FEAT_RELTIME
+				/* If the search timed out, we did find a match
+				 * but it might be the wrong one, so that's not
+				 * OK. */
+				if (timed_out != NULL && *timed_out)
+				    match_ok = FALSE;
+#endif
 				break;
+			    }
 
 			    /* Need to get the line pointer again, a
 			     * multi-line search may have made it invalid. */
@@ -2280,7 +2295,7 @@ findmatchlimit(
 	    {
 		/*
 		 * A comment may contain / * or / /, it may also start or end
-		 * with / * /.	Ignore a / * after / /.
+		 * with / * /.	Ignore a / * after / / and after *.
 		 */
 		if (pos.col == 0)
 		    continue;
@@ -2306,6 +2321,7 @@ findmatchlimit(
 		}
 		else if (  linep[pos.col - 1] == '/'
 			&& linep[pos.col] == '*'
+			&& (pos.col == 1 || linep[pos.col - 2] != '*')
 			&& (int)pos.col < comment_col)
 		{
 		    count++;
@@ -2668,14 +2684,8 @@ showmatch(
 	    showruler(FALSE);
 	    setcursor();
 	    cursor_on();		/* make sure that the cursor is shown */
-	    out_flush();
-#ifdef FEAT_GUI
-	    if (gui.in_use)
-	    {
-		gui_update_cursor(TRUE, FALSE);
-		gui_mch_flush();
-	    }
-#endif
+	    out_flush_cursor(TRUE, FALSE);
+
 	    /* Restore dollar_vcol(), because setcursor() may call curs_rows()
 	     * which resets it if the matching position is in a previous line
 	     * and has a higher column number. */
@@ -5049,8 +5059,7 @@ find_pattern_in_path(
 				prev_fname = NULL;
 			    }
 			}
-			vim_free(new_fname);
-			new_fname = NULL;
+			VIM_CLEAR(new_fname);
 			already_searched = TRUE;
 			break;
 		    }

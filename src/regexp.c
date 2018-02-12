@@ -695,9 +695,9 @@ static void	skipchr_keepstart(void);
 static int	peekchr(void);
 static void	skipchr(void);
 static void	ungetchr(void);
-static int	gethexchrs(int maxinputlen);
-static int	getoctchrs(void);
-static int	getdecchrs(void);
+static long	gethexchrs(int maxinputlen);
+static long	getoctchrs(void);
+static long	getdecchrs(void);
 static int	coll_get_char(void);
 static void	regcomp_start(char_u *expr, int flags);
 static char_u	*reg(int, int *);
@@ -1837,7 +1837,7 @@ regpiece(int *flagp)
 	case Magic('@'):
 	    {
 		int	lop = END;
-		int	nr;
+		long	nr;
 
 		nr = getdecchrs();
 		switch (no_Magic(getchr()))
@@ -2278,7 +2278,7 @@ regatom(int *flagp)
 		case 'u':   /* %uabcd hex 4 */
 		case 'U':   /* %U1234abcd hex 8 */
 			  {
-			      int i;
+			      long i;
 
 			      switch (c)
 			      {
@@ -3274,10 +3274,10 @@ ungetchr(void)
  * The parameter controls the maximum number of input characters. This will be
  * 2 when reading a \%x20 sequence and 4 when reading a \%u20AC sequence.
  */
-    static int
+    static long
 gethexchrs(int maxinputlen)
 {
-    int		nr = 0;
+    long_u	nr = 0;
     int		c;
     int		i;
 
@@ -3293,17 +3293,17 @@ gethexchrs(int maxinputlen)
 
     if (i == 0)
 	return -1;
-    return nr;
+    return (long)nr;
 }
 
 /*
  * Get and return the value of the decimal string immediately after the
  * current position. Return -1 for invalid.  Consumes all digits.
  */
-    static int
+    static long
 getdecchrs(void)
 {
-    int		nr = 0;
+    long_u	nr = 0;
     int		c;
     int		i;
 
@@ -3320,7 +3320,7 @@ getdecchrs(void)
 
     if (i == 0)
 	return -1;
-    return nr;
+    return (long)nr;
 }
 
 /*
@@ -3331,10 +3331,10 @@ getdecchrs(void)
  *     blahblah\%o210asdf
  *	   before-^  ^-after
  */
-    static int
+    static long
 getoctchrs(void)
 {
-    int		nr = 0;
+    long_u	nr = 0;
     int		c;
     int		i;
 
@@ -3350,7 +3350,7 @@ getoctchrs(void)
 
     if (i == 0)
 	return -1;
-    return nr;
+    return (long)nr;
 }
 
 /*
@@ -3360,7 +3360,7 @@ getoctchrs(void)
     static int
 coll_get_char(void)
 {
-    int	    nr = -1;
+    long	nr = -1;
 
     switch (*regparse++)
     {
@@ -3996,10 +3996,7 @@ theend:
     /* Free "reg_tofree" when it's a bit big.
      * Free regstack and backpos if they are bigger than their initial size. */
     if (reg_tofreelen > 400)
-    {
-	vim_free(reg_tofree);
-	reg_tofree = NULL;
-    }
+	VIM_CLEAR(reg_tofree);
     if (regstack.ga_maxlen > REGSTACK_INITIAL)
 	ga_clear(&regstack);
     if (backpos.ga_maxlen > BACKPOS_INITIAL)
@@ -7521,8 +7518,7 @@ vim_regsub_both(
 	    {
 		STRCPY(dest, eval_result);
 		dst += STRLEN(eval_result);
-		vim_free(eval_result);
-		eval_result = NULL;
+		VIM_CLEAR(eval_result);
 	    }
 	}
 	else
@@ -8150,7 +8146,7 @@ vim_regcomp(char_u *expr_arg, int re_flags)
      * First try the NFA engine, unless backtracking was requested.
      */
     if (regexp_engine != BACKTRACKING_ENGINE)
-        prog = nfa_regengine.regcomp(expr,
+	prog = nfa_regengine.regcomp(expr,
 		re_flags + (regexp_engine == AUTOMATIC_ENGINE ? RE_AUTO : 0));
     else
 	prog = bt_regengine.regcomp(expr, re_flags);
@@ -8170,7 +8166,7 @@ vim_regcomp(char_u *expr_arg, int re_flags)
 	    }
 	    else
 		EMSG2("(NFA) Could not open \"%s\" to write !!!",
-                        BT_REGEXP_DEBUG_LOG_NAME);
+			BT_REGEXP_DEBUG_LOG_NAME);
 	}
 #endif
 	/*
@@ -8341,10 +8337,10 @@ vim_regexec_nl(regmatch_T *rmp, char_u *line, colnr_T col)
     long
 vim_regexec_multi(
     regmmatch_T *rmp,
-    win_T       *win,           /* window in which to search or NULL */
-    buf_T       *buf,           /* buffer in which to search */
-    linenr_T    lnum,           /* nr of line to start looking for match */
-    colnr_T     col,            /* column to start looking for match */
+    win_T       *win,		/* window in which to search or NULL */
+    buf_T       *buf,		/* buffer in which to search */
+    linenr_T	lnum,		/* nr of line to start looking for match */
+    colnr_T	col,		/* column to start looking for match */
     proftime_T	*tm,		/* timeout limit or NULL */
     int		*timed_out)	/* flag is set when timeout limit reached */
 {

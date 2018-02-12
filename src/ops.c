@@ -183,8 +183,15 @@ get_op_type(int char1, int char2)
     if (char1 == 'g' && char2 == Ctrl_X)	/* subtract */
 	return OP_NR_SUB;
     for (i = 0; ; ++i)
+    {
 	if (opchars[i][0] == char1 && opchars[i][1] == char2)
 	    break;
+	if (i == (int)(sizeof(opchars) / sizeof(char [3]) - 1))
+	{
+	    internal_error("get_op_type()");
+	    break;
+	}
+    }
     return i;
 }
 
@@ -1228,8 +1235,7 @@ do_execreg(
 	    EMSG(_(e_nolastcmd));
 	    return FAIL;
 	}
-	vim_free(new_last_cmdline); /* don't keep the cmdline containing @: */
-	new_last_cmdline = NULL;
+	VIM_CLEAR(new_last_cmdline); /* don't keep the cmdline containing @: */
 	/* Escape all control characters with a CTRL-V */
 	p = vim_strsave_escaped_ext(last_cmdline,
 		(char_u *)"\001\002\003\004\005\006\007\010\011\012\013\014\015\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037", Ctrl_V, FALSE);
@@ -1645,6 +1651,67 @@ shift_delete_registers()
     y_regs[1].y_array = NULL;		/* set register one to empty */
 }
 
+#ifdef FEAT_AUTOCMD
+    static void
+yank_do_autocmd(oparg_T *oap, yankreg_T *reg)
+{
+    static int	recursive = FALSE;
+    dict_T	*v_event;
+    list_T	*list;
+    int		n;
+    char_u	buf[NUMBUFLEN + 2];
+    long	reglen = 0;
+
+    if (recursive)
+	return;
+
+    v_event = get_vim_var_dict(VV_EVENT);
+
+    list = list_alloc();
+    if (list == NULL)
+	return;
+    for (n = 0; n < reg->y_size; n++)
+	list_append_string(list, reg->y_array[n], -1);
+    list->lv_lock = VAR_FIXED;
+    dict_add_list(v_event, "regcontents", list);
+
+    buf[0] = (char_u)oap->regname;
+    buf[1] = NUL;
+    dict_add_nr_str(v_event, "regname", 0, buf);
+
+    buf[0] = get_op_char(oap->op_type);
+    buf[1] = get_extra_op_char(oap->op_type);
+    buf[2] = NUL;
+    dict_add_nr_str(v_event, "operator", 0, buf);
+
+    buf[0] = NUL;
+    buf[1] = NUL;
+    switch (get_reg_type(oap->regname, &reglen))
+    {
+	case MLINE: buf[0] = 'V'; break;
+	case MCHAR: buf[0] = 'v'; break;
+	case MBLOCK:
+		vim_snprintf((char *)buf, sizeof(buf), "%c%ld", Ctrl_V,
+			     reglen + 1);
+		break;
+    }
+    dict_add_nr_str(v_event, "regtype", 0, buf);
+
+    /* Lock the dictionary and its keys */
+    dict_set_items_ro(v_event);
+
+    recursive = TRUE;
+    textlock++;
+    apply_autocmds(EVENT_TEXTYANKPOST, NULL, NULL, FALSE, curbuf);
+    textlock--;
+    recursive = FALSE;
+
+    /* Empty the dictionary, v:event is still valid */
+    dict_free_contents(v_event);
+    hash_init(&v_event->dv_hashtab);
+}
+#endif
+
 /*
  * Handle a delete operation.
  *
@@ -1798,6 +1865,11 @@ op_delete(oparg_T *oap)
 		return FAIL;
 	    }
 	}
+
+#ifdef FEAT_AUTOCMD
+	if (did_yank && has_textyankpost())
+	    yank_do_autocmd(oap, y_current);
+#endif
     }
 
     /*
@@ -2042,13 +2114,21 @@ op_replace(oparg_T *oap, int c)
     size_t		oldlen;
     struct block_def	bd;
     char_u		*after_p = NULL;
-    int			had_ctrl_v_cr = (c == -1 || c == -2);
+    int			had_ctrl_v_cr = FALSE;
 
     if ((curbuf->b_ml.ml_flags & ML_EMPTY ) || oap->empty)
 	return OK;	    /* nothing to do */
 
-    if (had_ctrl_v_cr)
-	c = (c == -1 ? '\r' : '\n');
+    if (c == REPLACE_CR_NCHAR)
+    {
+	had_ctrl_v_cr = TRUE;
+	c = CAR;
+    }
+    else if (c == REPLACE_NL_NCHAR)
+    {
+	had_ctrl_v_cr = TRUE;
+	c = NL;
+    }
 
 #ifdef FEAT_MBYTE
     if (has_mbyte)
@@ -2136,7 +2216,8 @@ op_replace(oparg_T *oap, int c)
 	    /* insert pre-spaces */
 	    vim_memset(newp + bd.textcol, ' ', (size_t)bd.startspaces);
 	    /* insert replacement chars CHECK FOR ALLOCATED SPACE */
-	    /* -1/-2 is used for entering CR literally. */
+	    /* REPLACE_CR_NCHAR/REPLACE_NL_NCHAR is used for entering CR
+	     * literally. */
 	    if (had_ctrl_v_cr || (c != '\r' && c != '\n'))
 	    {
 #ifdef FEAT_MBYTE
@@ -2915,8 +2996,7 @@ free_yank(long n)
 #endif
 	    vim_free(y_current->y_array[i]);
 	}
-	vim_free(y_current->y_array);
-	y_current->y_array = NULL;
+	VIM_CLEAR(y_current->y_array);
 #ifdef AMIGA
 	if (n >= 1000)
 	    MSG("");
@@ -3268,6 +3348,11 @@ op_yank(oparg_T *oap, int deleting, int mess)
 	}
     }
 # endif
+#endif
+
+#ifdef FEAT_AUTOCMD
+    if (!deleting && has_textyankpost())
+	yank_do_autocmd(oap, y_current);
 #endif
 
     return OK;
@@ -5433,7 +5518,7 @@ op_addsub(
 	    }
 	    else /* oap->motion_type == MCHAR */
 	    {
-		if (!oap->inclusive)
+		if (pos.lnum == oap->start.lnum && !oap->inclusive)
 		    dec(&(oap->end));
 		length = (colnr_T)STRLEN(ml_get(pos.lnum));
 		pos.col = 0;
@@ -5955,8 +6040,7 @@ finish_viminfo_registers(void)
 		    vim_free(y_read_regs[i].y_array[j]);
 		vim_free(y_read_regs[i].y_array);
 	    }
-	vim_free(y_read_regs);
-	y_read_regs = NULL;
+	VIM_CLEAR(y_read_regs);
     }
 }
 
@@ -6294,7 +6378,7 @@ write_viminfo_registers(FILE *fp)
 	     * |{bartype},{flags},{name},{type},
 	     *      {linecount},{width},{timestamp},"line1","line2"
 	     * flags: REG_PREVIOUS - register is y_previous
-	     *        REG_EXEC - used for @@
+	     *	      REG_EXEC - used for @@
 	     */
 	    if (y_previous == &y_regs[i])
 		flags |= REG_PREVIOUS;
@@ -7061,8 +7145,7 @@ str_to_reg(
     /* Without any lines make the register empty. */
     if (y_ptr->y_size + newlines == 0)
     {
-	vim_free(y_ptr->y_array);
-	y_ptr->y_array = NULL;
+	VIM_CLEAR(y_ptr->y_array);
 	return;
     }
 

@@ -107,7 +107,7 @@ netbeans_close(void)
 	nb_channel = NULL;
     }
 
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_GUI
     bevalServers &= ~BEVAL_NETBEANS;
 #endif
 
@@ -121,14 +121,7 @@ netbeans_close(void)
     update_screen(CLEAR);
     setcursor();
     cursor_on();
-    out_flush();
-#ifdef FEAT_GUI
-    if (gui.in_use)
-    {
-	gui_update_cursor(TRUE, FALSE);
-	gui_mch_flush();
-    }
-#endif
+    out_flush_cursor(TRUE, FALSE);
 }
 
 #define NB_DEF_HOST "localhost"
@@ -220,7 +213,7 @@ netbeans_connect(char *params, int doabort)
 	if (nb_channel != NULL)
 	{
 	    /* success */
-# ifdef FEAT_BEVAL
+# ifdef FEAT_BEVAL_GUI
 	    bevalServers |= BEVAL_NETBEANS;
 # endif
 
@@ -587,8 +580,7 @@ nb_free(void)
 	    buf.bufp->b_was_netbeans_file = FALSE;
 	}
     }
-    vim_free(buf_list);
-    buf_list = NULL;
+    VIM_CLEAR(buf_list);
     buf_list_size = 0;
     buf_list_used = 0;
 
@@ -1484,8 +1476,7 @@ nb_do_cmd(
 		EMSG("E636: invalid buffer identifier in create");
 		return FAIL;
 	    }
-	    vim_free(buf->displayname);
-	    buf->displayname = NULL;
+	    VIM_CLEAR(buf->displayname);
 
 	    netbeansReadFile = 0; /* don't try to open disk file */
 	    do_ecmd(0, NULL, 0, 0, ECMD_ONE, ECMD_HIDE + ECMD_OLDBUF, curwin);
@@ -1788,7 +1779,7 @@ nb_do_cmd(
 	}
 	else if (streq((char *)cmd, "showBalloon"))
 	{
-#if defined(FEAT_BEVAL)
+#if defined(FEAT_BEVAL_GUI)
 	    static char	*text = NULL;
 
 	    /*
@@ -1848,14 +1839,8 @@ nb_do_cmd(
 	    update_screen(VALID);
 	    setcursor();
 	    cursor_on();
-	    out_flush();
-#ifdef FEAT_GUI
-	    if (gui.in_use)
-	    {
-		gui_update_cursor(TRUE, FALSE);
-		gui_mch_flush();
-	    }
-#endif
+	    out_flush_cursor(TRUE, FALSE);
+
 	    /* Quit a hit-return or more prompt. */
 	    if (State == HITRETURN || State == ASKMORE)
 	    {
@@ -2248,14 +2233,8 @@ nb_do_cmd(
 	update_screen(NOT_VALID);
 	setcursor();
 	cursor_on();
-	out_flush();
-#ifdef FEAT_GUI
-	if (gui.in_use)
-	{
-	    gui_update_cursor(TRUE, FALSE);
-	    gui_mch_flush();
-	}
-#endif
+	out_flush_cursor(TRUE, FALSE);
+
 	/* Quit a hit-return or more prompt. */
 	if (State == HITRETURN || State == ASKMORE)
 	{
@@ -2307,15 +2286,7 @@ coloncmd(char *cmd, ...)
 /*     ALT_INPUT_LOCK_OFF; */
 
     setcursor();		/* restore the cursor position */
-    out_flush();		/* make sure output has been written */
-
-#ifdef FEAT_GUI
-    if (gui.in_use)
-    {
-	gui_update_cursor(TRUE, FALSE);
-	gui_mch_flush();
-    }
-#endif
+    out_flush_cursor(TRUE, FALSE);
 }
 
 
@@ -2506,7 +2477,7 @@ netbeans_beval_cb(
 
     /* Don't do anything when 'ballooneval' is off, messages scrolled the
      * windows up or we have no connection. */
-    if (!p_beval || msg_scrolled > 0 || !NETBEANS_OPEN)
+    if (!can_use_beval() || !NETBEANS_OPEN)
 	return;
 
     if (get_beval_info(beval, TRUE, &wp, &lnum, &text, &col) == OK)
@@ -2569,14 +2540,7 @@ netbeans_open(char *params, int doabort)
     update_screen(CLEAR);
     setcursor();
     cursor_on();
-    out_flush();
-#ifdef FEAT_GUI
-    if (gui.in_use)
-    {
-	gui_update_cursor(TRUE, FALSE);
-	gui_mch_flush();
-    }
-#endif
+    out_flush_cursor(TRUE, FALSE);
 }
 
 /*
@@ -2697,7 +2661,7 @@ netbeans_file_opened(buf_T *bufp)
     nbdebug(("EVT: %s", buffer));
 
     nb_send(buffer, "netbeans_file_opened");
-    if (p_acd && vim_chdirfile(bufp->b_ffname) == OK)
+    if (p_acd && vim_chdirfile(bufp->b_ffname, "auto") == OK)
 	shorten_fnames(TRUE);
 }
 
@@ -3481,8 +3445,7 @@ print_read_msg(nbbuf_T *buf)
     msg_add_lines(c, (long)lnum, nchars);
 
     /* Now display it */
-    vim_free(keep_msg);
-    keep_msg = NULL;
+    VIM_CLEAR(keep_msg);
     msg_scrolled_ign = TRUE;
     msg_trunc_attr(IObuff, FALSE, 0);
     msg_scrolled_ign = FALSE;
@@ -3509,8 +3472,7 @@ print_save_msg(nbbuf_T *buf, off_T nchars)
 	msg_add_lines(c, buf->bufp->b_ml.ml_line_count,
 						buf->bufp->b_orig_size);
 
-	vim_free(keep_msg);
-	keep_msg = NULL;
+	VIM_CLEAR(keep_msg);
 	msg_scrolled_ign = TRUE;
 	p = msg_trunc_attr(IObuff, FALSE, 0);
 	if ((msg_scrolled && !need_wait_return) || !buf->initDone)

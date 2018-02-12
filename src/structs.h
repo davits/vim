@@ -1983,6 +1983,15 @@ struct file_buffer
 				   incremented for each change, also for undo */
 #define CHANGEDTICK(buf) ((buf)->b_ct_di.di_tv.vval.v_number)
 
+#ifdef FEAT_AUTOCMD
+    varnumber_T	b_last_changedtick; /* b:changedtick when TextChanged or
+				       TextChangedI was last triggered. */
+# ifdef FEAT_INS_EXPAND
+    varnumber_T	b_last_changedtick_pum; /* b:changedtick when TextChangedP was
+					   last triggered. */
+# endif
+#endif
+
     int		b_saving;	/* Set to TRUE if we are in the middle of
 				   saving the buffer. */
 
@@ -2091,12 +2100,8 @@ struct file_buffer
 #define B_IMODE_USE_INSERT -1	/*	Use b_p_iminsert value for search */
 #define B_IMODE_NONE 0		/*	Input via none */
 #define B_IMODE_LMAP 1		/*	Input via langmap */
-#ifndef USE_IM_CONTROL
-# define B_IMODE_LAST 1
-#else
-# define B_IMODE_IM 2		/*	Input via input method */
-# define B_IMODE_LAST 2
-#endif
+#define B_IMODE_IM 2		/*	Input via input method */
+#define B_IMODE_LAST 2
 
 #ifdef FEAT_KEYMAP
     short	b_kmap_state;	/* using "lmap" mappings */
@@ -3244,17 +3249,34 @@ typedef struct
 /*
  * Array indexes used for cptext argument of ins_compl_add().
  */
-#define CPT_ABBR    0	/* "abbr" */
-#define CPT_MENU    1	/* "menu" */
-#define CPT_KIND    2	/* "kind" */
-#define CPT_INFO    3	/* "info" */
-#define CPT_COUNT   4	/* Number of entries */
+#define CPT_ABBR	0	/* "abbr" */
+#define CPT_MENU	1	/* "menu" */
+#define CPT_KIND	2	/* "kind" */
+#define CPT_INFO	3	/* "info" */
+#define CPT_USER_DATA	4	/* "user data" */
+#define CPT_COUNT	5	/* Number of entries */
 
 typedef struct {
   UINT32_T total[2];
   UINT32_T state[8];
   char_u   buffer[64];
 } context_sha256_T;
+
+/*
+ * types for expressions.
+ */
+typedef enum
+{
+    TYPE_UNKNOWN = 0
+    , TYPE_EQUAL	/* == */
+    , TYPE_NEQUAL	/* != */
+    , TYPE_GREATER	/* >  */
+    , TYPE_GEQUAL	/* >= */
+    , TYPE_SMALLER	/* <  */
+    , TYPE_SEQUAL	/* <= */
+    , TYPE_MATCH	/* =~ */
+    , TYPE_NOMATCH	/* !~ */
+} exptype_T;
 
 /*
  * Structure used for reading in json_decode().

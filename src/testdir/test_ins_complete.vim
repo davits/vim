@@ -2,6 +2,11 @@
 " Test for insert expansion
 func Test_ins_complete()
   edit test_ins_complete.vim
+  " The files in the current directory interferes with the files
+  " used by this test. So use a separate directory for the test.
+  call mkdir('Xdir')
+  cd Xdir
+
   set ff=unix
   call writefile(["test11\t36Gepeto\t/Tag/",
 	      \ "asd\ttest11file\t36G",
@@ -89,4 +94,156 @@ func Test_ins_complete()
   call delete('Xtest11.two')
   call delete('Xtestdata')
   set cpt& cot& def& tags& tagbsearch& hidden&
+  cd ..
+  call delete('Xdir', 'rf')
+endfunc
+
+func Test_omni_dash()
+  func Omni(findstart, base)
+    if a:findstart
+        return 5
+    else
+        echom a:base
+	return ['-help', '-v']
+    endif
+  endfunc
+  set omnifunc=Omni
+  new
+  exe "normal Gofind -\<C-x>\<C-o>"
+  call assert_equal("\n-\nmatch 1 of 2", execute(':2mess'))
+
+  bwipe!
+  delfunc Omni
+  set omnifunc=
+endfunc
+
+function! s:CompleteDone_CompleteFuncDict( findstart, base )
+  if a:findstart
+    return 0
+  endif
+
+  return {
+          \ 'words': [
+            \ {
+              \ 'word': 'aword',
+              \ 'abbr': 'wrd',
+              \ 'menu': 'extra text',
+              \ 'info': 'words are cool',
+              \ 'kind': 'W',
+              \ 'user_data': 'test'
+            \ }
+          \ ]
+        \ }
+endfunction
+
+function! s:CompleteDone_CheckCompletedItemDict()
+  call assert_equal( 'aword',          v:completed_item[ 'word' ] )
+  call assert_equal( 'wrd',            v:completed_item[ 'abbr' ] )
+  call assert_equal( 'extra text',     v:completed_item[ 'menu' ] )
+  call assert_equal( 'words are cool', v:completed_item[ 'info' ] )
+  call assert_equal( 'W',              v:completed_item[ 'kind' ] )
+  call assert_equal( 'test',           v:completed_item[ 'user_data' ] )
+
+  let s:called_completedone = 1
+endfunction
+
+function Test_CompleteDoneDict()
+  au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemDict()
+
+  set completefunc=<SID>CompleteDone_CompleteFuncDict
+  execute "normal a\<C-X>\<C-U>\<C-Y>"
+  set completefunc&
+
+  call assert_equal( 'test', v:completed_item[ 'user_data' ] )
+  call assert_true( s:called_completedone )
+
+  let s:called_completedone = 0
+  au! CompleteDone
+endfunc
+
+function! s:CompleteDone_CompleteFuncDictNoUserData( findstart, base )
+  if a:findstart
+    return 0
+  endif
+
+  return {
+          \ 'words': [
+            \ {
+              \ 'word': 'aword',
+              \ 'abbr': 'wrd',
+              \ 'menu': 'extra text',
+              \ 'info': 'words are cool',
+              \ 'kind': 'W'
+            \ }
+          \ ]
+        \ }
+endfunction
+
+function! s:CompleteDone_CheckCompletedItemDictNoUserData()
+  call assert_equal( 'aword',          v:completed_item[ 'word' ] )
+  call assert_equal( 'wrd',            v:completed_item[ 'abbr' ] )
+  call assert_equal( 'extra text',     v:completed_item[ 'menu' ] )
+  call assert_equal( 'words are cool', v:completed_item[ 'info' ] )
+  call assert_equal( 'W',              v:completed_item[ 'kind' ] )
+  call assert_equal( '',               v:completed_item[ 'user_data' ] )
+
+  let s:called_completedone = 1
+endfunction
+
+function Test_CompleteDoneDictNoUserData()
+  au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemDictNoUserData()
+
+  set completefunc=<SID>CompleteDone_CompleteFuncDictNoUserData
+  execute "normal a\<C-X>\<C-U>\<C-Y>"
+  set completefunc&
+
+  call assert_equal( '', v:completed_item[ 'user_data' ] )
+  call assert_true( s:called_completedone )
+
+  let s:called_completedone = 0
+  au! CompleteDone
+endfunc
+
+function! s:CompleteDone_CompleteFuncList( findstart, base )
+  if a:findstart
+    return 0
+  endif
+
+  return [ 'aword' ]
+endfunction
+
+function! s:CompleteDone_CheckCompletedItemList()
+  call assert_equal( 'aword', v:completed_item[ 'word' ] )
+  call assert_equal( '',      v:completed_item[ 'abbr' ] )
+  call assert_equal( '',      v:completed_item[ 'menu' ] )
+  call assert_equal( '',      v:completed_item[ 'info' ] )
+  call assert_equal( '',      v:completed_item[ 'kind' ] )
+  call assert_equal( '',      v:completed_item[ 'user_data' ] )
+
+  let s:called_completedone = 1
+endfunction
+
+function Test_CompleteDoneList()
+  au CompleteDone * :call <SID>CompleteDone_CheckCompletedItemList()
+
+  set completefunc=<SID>CompleteDone_CompleteFuncList
+  execute "normal a\<C-X>\<C-U>\<C-Y>"
+  set completefunc&
+
+  call assert_equal( '', v:completed_item[ 'user_data' ] )
+  call assert_true( s:called_completedone )
+
+  let s:called_completedone = 0
+  au! CompleteDone
+endfunc
+
+" Check that when using feedkeys() typeahead does not interrupt searching for
+" completions.
+func Test_compl_feedkeys()
+  new
+  set completeopt=menuone,noselect
+  call feedkeys("ajump ju\<C-X>\<C-N>\<C-P>\<ESC>", "tx")
+  call assert_equal("jump jump", getline(1))
+  bwipe!
+  set completeopt&
 endfunc

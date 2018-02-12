@@ -1792,6 +1792,14 @@ vgetc(void)
      */
     may_garbage_collect = FALSE;
 #endif
+#ifdef FEAT_BEVAL_TERM
+    if (c != K_MOUSEMOVE && c != K_IGNORE)
+    {
+	/* Don't trigger 'balloonexpr' unless only the mouse was moved. */
+	bevalexpr_due_set = FALSE;
+	ui_remove_balloon();
+    }
+#endif
 
     return c;
 }
@@ -2107,7 +2115,8 @@ vgetorpeek(int advance)
 			    && State != ASKMORE
 			    && State != CONFIRM
 #ifdef FEAT_INS_EXPAND
-			    && !((ctrl_x_mode != 0 && vim_is_ctrl_x_key(c1))
+			    && !((ctrl_x_mode_not_default()
+						      && vim_is_ctrl_x_key(c1))
 				    || ((compl_cont_status & CONT_LOCAL)
 					&& (c1 == Ctrl_N || c1 == Ctrl_P)))
 #endif
@@ -2882,7 +2891,7 @@ vgetorpeek(int advance)
 						     + typebuf.tb_len] != NUL)
 			typebuf.tb_noremap[typebuf.tb_off
 						 + typebuf.tb_len++] = RM_YES;
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
 		    /* Get IM status right after getting keys, not after the
 		     * timeout for a mapping (focus may be lost by then). */
 		    vgetc_im_active = im_get_status();
@@ -2964,16 +2973,10 @@ inchar(
     if (wait_time == -1L || wait_time > 100L)  /* flush output before waiting */
     {
 	cursor_on();
-	out_flush();
-#ifdef FEAT_GUI
-	if (gui.in_use)
-	{
-	    gui_update_cursor(FALSE, FALSE);
-# ifdef FEAT_MOUSESHAPE
-	    if (postponed_mouseshape)
-		update_mouseshape(-1);
-# endif
-	}
+	out_flush_cursor(FALSE, FALSE);
+#if defined(FEAT_GUI) && defined(FEAT_MOUSESHAPE)
+	if (gui.in_use && postponed_mouseshape)
+	    update_mouseshape(-1);
 #endif
     }
 

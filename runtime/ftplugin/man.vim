@@ -1,7 +1,7 @@
 " Vim filetype plugin file
 " Language:	man
 " Maintainer:	SungHyun Nam <goweol@gmail.com>
-" Last Change: 	2017 Jan 18
+" Last Change: 	2018 Jan 15
 
 " To make the ":Man" command available before editing a manual page, source
 " this script from your startup vimrc file.
@@ -14,12 +14,6 @@ if &filetype == "man"
     finish
   endif
   let b:did_ftplugin = 1
-
-  " Ensure Vim is not recursively invoked (man-db does this)
-  " when doing ctrl-[ on a man page reference.
-  if exists("$MANPAGER")
-    let $MANPAGER = ""
-  endif
 
   " allow dot and dash in manual page name.
   setlocal iskeyword+=\.,-
@@ -45,7 +39,7 @@ if &filetype == "man"
 endif
 
 if exists(":Man") != 2
-  com -nargs=+ Man call s:GetPage(<f-args>)
+  com -nargs=+ -complete=shellcmd Man call s:GetPage(<f-args>)
   nmap <Leader>K :call <SID>PreGetPage(0)<CR>
   nmap <Plug>ManPreGetPage :call <SID>PreGetPage(0)<CR>
 endif
@@ -176,7 +170,19 @@ func <SID>GetPage(...)
     let $MANWIDTH = winwidth(0)
     let unsetwidth = 1
   endif
-  silent exec "r !man ".s:GetCmdArg(sect, page)." | col -b"
+
+  " Ensure Vim is not recursively invoked (man-db does this) when doing ctrl-[
+  " on a man page reference by unsetting MANPAGER.
+  " Some versions of env(1) do not support the '-u' option, and in such case
+  " we set MANPAGER=cat.
+  if !exists('s:env_has_u')
+    call system('env -u x true')
+    let s:env_has_u = (v:shell_error == 0)
+  endif
+  let env_cmd = s:env_has_u ? 'env -u MANPAGER' : 'env MANPAGER=cat'
+  let man_cmd = env_cmd . ' man ' . s:GetCmdArg(sect, page) . ' | col -b'
+  silent exec "r !" . man_cmd
+
   if unsetwidth
     let $MANWIDTH = ''
   endif

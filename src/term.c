@@ -2501,6 +2501,28 @@ out_flush(void)
     }
 }
 
+/*
+ * out_flush_cursor(): flush the output buffer and redraw the cursor.
+ * Does not flush recursively in the GUI to avoid slow drawing.
+ */
+    void
+out_flush_cursor(
+    int	    force UNUSED,   /* when TRUE, update cursor even when not moved */
+    int	    clear_selection UNUSED) /* clear selection under cursor */
+{
+    mch_disable_flush();
+    out_flush();
+    mch_enable_flush();
+#ifdef FEAT_GUI
+    if (gui.in_use)
+    {
+	gui_update_cursor(force, clear_selection);
+	gui_may_flush();
+    }
+#endif
+}
+
+
 #if defined(FEAT_MBYTE) || defined(PROTO)
 /*
  * Sometimes a byte out of a multi-byte character is written with out_char().
@@ -3510,6 +3532,9 @@ may_req_ambiguous_char_width(void)
 	 out_str((char_u *)"  ");
 	 term_windgoto(0, 0);
 
+	 /* Need to reset the known cursor position. */
+	 screen_start();
+
 	 /* check for the characters now, otherwise they might be eaten by
 	  * get_keystroke() */
 	 out_flush();
@@ -3888,8 +3913,7 @@ clear_termcodes(void)
 {
     while (tc_len > 0)
 	vim_free(termcodes[--tc_len].code);
-    vim_free(termcodes);
-    termcodes = NULL;
+    VIM_CLEAR(termcodes);
     tc_max_len = 0;
 
 #ifdef HAVE_TGETENT
@@ -4546,22 +4570,9 @@ check_termcode(
 		    if (tp[1 + (tp[0] != CSI)] == '>' && semicols == 2)
 		    {
 			int need_flush = FALSE;
-
-			/* Only set 'ttymouse' automatically if it was not set
-			 * by the user already. */
-			if (!option_was_set((char_u *)"ttym"))
-			{
-# ifdef TTYM_SGR
-			    if (version >= 277)
-				set_option_value((char_u *)"ttym", 0L,
-							  (char_u *)"sgr", 0);
-			    else
+# ifdef FEAT_MOUSE_SGR
+			int is_iterm2 = FALSE;
 # endif
-			    /* if xterm version >= 95 use mouse dragging */
-			    if (version >= 95)
-				set_option_value((char_u *)"ttym", 0L,
-						       (char_u *)"xterm2", 0);
-			}
 
 			/* if xterm version >= 141 try to get termcap codes */
 			if (version >= 141)
@@ -4581,19 +4592,50 @@ check_termcode(
 			     * 256, libvterm supports even more. */
 			    if (mch_getenv((char_u *)"COLORS") == NULL)
 				may_adjust_color_count(256);
+# ifdef FEAT_MOUSE_SGR
+			    /* Libvterm can handle SGR mouse reporting. */
+			    if (!option_was_set((char_u *)"ttym"))
+				set_option_value((char_u *)"ttym", 0L,
+							   (char_u *)"sgr", 0);
+# endif
+			}
+
+			if (version == 95)
+			{
+			    /* Mac Terminal.app sends 1;95;0 */
+			    if (STRNCMP(tp + extra - 2, "1;95;0c", 7) == 0)
+			    {
+				is_not_xterm = TRUE;
+				is_mac_terminal = TRUE;
+			    }
+# ifdef FEAT_MOUSE_SGR
+			    /* iTerm2 sends 0;95;0 */
+			    if (STRNCMP(tp + extra - 2, "0;95;0c", 7) == 0)
+				is_iterm2 = TRUE;
+# endif
+			}
+
+			/* Only set 'ttymouse' automatically if it was not set
+			 * by the user already. */
+			if (!option_was_set((char_u *)"ttym"))
+			{
+# ifdef FEAT_MOUSE_SGR
+			    /* Xterm version 277 supports SGR.  Also support
+			     * Terminal.app and iTerm2. */
+			    if (version >= 277 || is_iterm2 || is_mac_terminal)
+				set_option_value((char_u *)"ttym", 0L,
+							  (char_u *)"sgr", 0);
+			    else
+# endif
+			    /* if xterm version >= 95 use mouse dragging */
+			    if (version >= 95)
+				set_option_value((char_u *)"ttym", 0L,
+						       (char_u *)"xterm2", 0);
 			}
 
 			/* Detect terminals that set $TERM to something like
 			 * "xterm-256colors"  but are not fully xterm
 			 * compatible. */
-
-			/* Mac Terminal.app sends 1;95;0 */
-			if (version == 95
-				&& STRNCMP(tp + extra - 2, "1;95;0c", 7) == 0)
-			{
-			    is_not_xterm = TRUE;
-			    is_mac_terminal = TRUE;
-			}
 
 			/* Gnome terminal sends 1;3801;0, 1;4402;0 or 1;2501;0.
 			 * xfce4-terminal sends 1;2802;0.
@@ -4751,10 +4793,11 @@ check_termcode(
 			if (i - j >= 21 && STRNCMP(tp + j + 3, "rgb:", 4) == 0
 			    && tp[j + 11] == '/' && tp[j + 16] == '/')
 			{
+#ifdef FEAT_TERMINAL
 			    int rval = hexhex2nr(tp + j + 7);
 			    int gval = hexhex2nr(tp + j + 12);
 			    int bval = hexhex2nr(tp + j + 17);
-
+#endif
 			    if (is_bg)
 			    {
 				char *newval = (3 * '6' < tp[j+7] + tp[j+12]
@@ -4961,6 +5004,8 @@ check_termcode(
 		 *	add 0x08 for ALT
 		 *	add 0x10 for CTRL
 		 *	add 0x20 for mouse drag (0x40 is drag with left button)
+		 *	add 0x40 for mouse move (0x80 is move, 0x81 too)
+		 *		 0x43 (drag + release) is also move
 		 *  c == column + ' ' + 1 == column + 33
 		 *  r == row + ' ' + 1 == row + 33
 		 *
@@ -5102,9 +5147,15 @@ check_termcode(
 #   endif
 			)
 		{
-		    /* Keep the mouse_code before it's changed, so that we
-		     * remember that it was a mouse wheel click. */
-		    wheel_code = mouse_code;
+#   if defined(UNIX) && defined(FEAT_MOUSE_TTY)
+		    if (use_xterm_mouse() > 1 && mouse_code >= 0x80)
+			/* mouse-move event, using MOUSE_DRAG works */
+			mouse_code = MOUSE_DRAG;
+		    else
+#   endif
+			/* Keep the mouse_code before it's changed, so that we
+			 * remember that it was a mouse wheel click. */
+			wheel_code = mouse_code;
 		}
 #   ifdef FEAT_MOUSE_XTERM
 		else if (held_button == MOUSE_RELEASE
@@ -5597,7 +5648,7 @@ check_termcode(
 	    /* Work out our pseudo mouse event. Note that MOUSE_RELEASE gets
 	     * added, then it's not mouse up/down. */
 	    key_name[0] = (int)KS_EXTRA;
-            if (wheel_code != 0
+	    if (wheel_code != 0
 			      && (wheel_code & MOUSE_RELEASE) != MOUSE_RELEASE)
 	    {
 		if (wheel_code & MOUSE_CTRL)
@@ -5606,6 +5657,7 @@ check_termcode(
 		    modifiers |= MOD_MASK_ALT;
 		key_name[1] = (wheel_code & 1)
 					? (int)KE_MOUSEUP : (int)KE_MOUSEDOWN;
+		held_button = MOUSE_RELEASE;
 	    }
 	    else
 		key_name[1] = get_pseudo_mouse_code(current_button,

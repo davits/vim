@@ -433,8 +433,9 @@ if test "x$found_smack" = "x"; then
   if test "$enable_selinux" = "yes"; then
     AC_MSG_RESULT(no)
     AC_CHECK_LIB(selinux, is_selinux_enabled,
+	[AC_CHECK_HEADER(selinux/selinux.h,
 	    [LIBS="$LIBS -lselinux"
-	     AC_DEFINE(HAVE_SELINUX)])
+	    AC_DEFINE(HAVE_SELINUX)])])
   else
      AC_MSG_RESULT(yes)
   fi
@@ -2058,12 +2059,21 @@ else
     AC_MSG_RESULT(no)
   fi
 fi
-if test "$enable_terminal" = "yes"; then
+if test "$enable_terminal" = "yes" -a "$enable_channel" = "yes"; then
   AC_DEFINE(FEAT_TERMINAL)
   TERM_SRC="libvterm/src/encoding.c libvterm/src/keyboard.c libvterm/src/mouse.c libvterm/src/parser.c libvterm/src/pen.c libvterm/src/screen.c libvterm/src/state.c libvterm/src/unicode.c libvterm/src/vterm.c"
   AC_SUBST(TERM_SRC)
   TERM_OBJ="objects/term_encoding.o objects/term_keyboard.o objects/term_mouse.o objects/term_parser.o objects/term_pen.o objects/term_screen.o objects/term_state.o objects/term_unicode.o objects/term_vterm.o"
   AC_SUBST(TERM_OBJ)
+fi
+
+AC_MSG_CHECKING(--enable-autoservername argument)
+AC_ARG_ENABLE(autoservername,
+	[  --enable-autoservername Automatically define servername at vim startup.], ,
+	[enable_autoservername="no"])
+AC_MSG_RESULT($enable_autoservername)
+if test "$enable_autoservername" = "yes"; then
+  AC_DEFINE(FEAT_AUTOSERVERNAME)
 fi
 
 AC_MSG_CHECKING(--enable-multibyte argument)
@@ -2624,7 +2634,7 @@ if test -z "$SKIP_GTK2"; then
   fi
 
   if test "X$PKG_CONFIG" = "X"; then
-    AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+    AC_PATH_TOOL(PKG_CONFIG, pkg-config, no)
   fi
 
   if test "x$PKG_CONFIG" != "xno"; then
@@ -2676,7 +2686,7 @@ if test -z "$SKIP_GTK3"; then
   fi
 
   if test "X$PKG_CONFIG" = "X"; then
-    AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+    AC_PATH_TOOL(PKG_CONFIG, pkg-config, no)
   fi
 
   if test "x$PKG_CONFIG" != "xno"; then
@@ -3388,7 +3398,7 @@ if test "x$vim_cv_terminfo" = "xyes" ; then
   AC_DEFINE(TERMINFO)
 fi
 
-AC_CACHE_CHECK([what tgetent() returns for an unknown terminal], [vim_cv_tgent],
+AC_CACHE_CHECK([what tgetent() returns for an unknown terminal], [vim_cv_tgetent],
   [
     AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include "confdefs.h"
@@ -3402,15 +3412,15 @@ AC_CACHE_CHECK([what tgetent() returns for an unknown terminal], [vim_cv_tgent],
 main()
 {char s[10000]; int res = tgetent(s, "thisterminaldoesnotexist"); exit(res != 0); }
     ]])],[
-      vim_cv_tgent=zero
+      vim_cv_tgetent=zero
     ],[
-      vim_cv_tgent=non-zero
+      vim_cv_tgetent=non-zero
     ],[
       AC_MSG_ERROR(failed to compile test program.)
     ])
   ])
 
-if test "x$vim_cv_tgent" = "xzero" ; then
+if test "x$vim_cv_tgetent" = "xzero" ; then
   AC_DEFINE(TGETENT_ZERO_ERR, 0)
 fi
 
@@ -3646,13 +3656,13 @@ fi
 
 dnl Check for functions in one big call, to reduce the size of configure.
 dnl Can only be used for functions that do not require any include.
-AC_CHECK_FUNCS(fchdir fchown fsync getcwd getpseudotty \
+AC_CHECK_FUNCS(fchdir fchown fchmod fsync getcwd getpseudotty \
 	getpwent getpwnam getpwuid getrlimit gettimeofday getwd lstat \
 	memset mkdtemp nanosleep opendir putenv qsort readlink select setenv \
 	getpgid setpgid setsid sigaltstack sigstack sigset sigsetjmp sigaction \
 	sigprocmask sigvec strcasecmp strerror strftime stricmp strncasecmp \
 	strnicmp strpbrk strtol tgetent towlower towupper iswupper \
-	usleep utime utimes mblen)
+	usleep utime utimes mblen ftruncate)
 AC_FUNC_FSEEKO
 
 dnl define _LARGE_FILES, _FILE_OFFSET_BITS and _LARGEFILE_SOURCE when
@@ -3787,16 +3797,16 @@ dnl when -lacl works, also try to use -lattr (required for Debian).
 dnl On Solaris, use the acl_get/set functions in libsec, if present.
 AC_MSG_CHECKING(--disable-acl argument)
 AC_ARG_ENABLE(acl,
-	[  --disable-acl           Don't check for ACL support.],
+	[  --disable-acl           No check for ACL support.],
 	, [enable_acl="yes"])
 if test "$enable_acl" = "yes"; then
-AC_MSG_RESULT(no)
-AC_CHECK_LIB(posix1e, acl_get_file, [LIBS="$LIBS -lposix1e"],
+  AC_MSG_RESULT(no)
+  AC_CHECK_LIB(posix1e, acl_get_file, [LIBS="$LIBS -lposix1e"],
 	AC_CHECK_LIB(acl, acl_get_file, [LIBS="$LIBS -lacl"
 		  AC_CHECK_LIB(attr, fgetxattr, LIBS="$LIBS -lattr",,)],,),)
 
-AC_MSG_CHECKING(for POSIX ACL support)
-AC_TRY_LINK([
+  AC_MSG_CHECKING(for POSIX ACL support)
+  AC_TRY_LINK([
 #include <sys/types.h>
 #ifdef HAVE_SYS_ACL_H
 # include <sys/acl.h>
@@ -3807,9 +3817,9 @@ acl_t acl;], [acl = acl_get_file("foo", ACL_TYPE_ACCESS);
 	AC_MSG_RESULT(yes); AC_DEFINE(HAVE_POSIX_ACL),
 	AC_MSG_RESULT(no))
 
-AC_CHECK_LIB(sec, acl_get, [LIBS="$LIBS -lsec"; AC_DEFINE(HAVE_SOLARIS_ZFS_ACL)],
-AC_MSG_CHECKING(for Solaris ACL support)
-AC_TRY_LINK([
+  AC_CHECK_LIB(sec, acl_get, [LIBS="$LIBS -lsec"; AC_DEFINE(HAVE_SOLARIS_ZFS_ACL)],
+  AC_MSG_CHECKING(for Solaris ACL support)
+  AC_TRY_LINK([
 #ifdef HAVE_SYS_ACL_H
 # include <sys/acl.h>
 #endif], [acl("foo", GETACLCNT, 0, NULL);
@@ -3817,8 +3827,8 @@ AC_TRY_LINK([
 	AC_MSG_RESULT(yes); AC_DEFINE(HAVE_SOLARIS_ACL),
 	AC_MSG_RESULT(no)))
 
-AC_MSG_CHECKING(for AIX ACL support)
-AC_TRY_LINK([
+  AC_MSG_CHECKING(for AIX ACL support)
+  AC_TRY_LINK([
 #if STDC_HEADERS
 # include <stdlib.h>
 # include <stddef.h>
@@ -4355,6 +4365,20 @@ if test "$GCC" = yes; then
   fi
 fi
 AC_SUBST(DEPEND_CFLAGS_FILTER)
+
+dnl On some systems AC_SYS_LARGEFILE determines that -D_FILE_OFFSET_BITS=64
+dnl isn't required, but the CFLAGS for some of the libraries we're using
+dnl include the define.  Since the define changes the size of some datatypes
+dnl (e.g. ino_t and off_t), all of Vim's modules must be compiled with a
+dnl consistent value.  It's therefore safest to force the use of the define
+dnl if it's present in any of the *_CFLAGS variables.
+AC_MSG_CHECKING(whether we need to force -D_FILE_OFFSET_BITS=64)
+if echo "$CFLAGS $LUA_CFLAGS $MZSCHEME_CFLAGS $PERL_CFLAGS $PYTHON_GETPATH_CFLAGS $PYTHON_CFLAGS $PYTHON3_CFLAGS $TCL_CFLAGS $RUBY_CFLAGS $GTK_CFLAGS" | grep -q D_FILE_OFFSET_BITS 2>/dev/null; then
+  AC_MSG_RESULT(yes)
+  AC_DEFINE(_FILE_OFFSET_BITS, 64)
+else
+  AC_MSG_RESULT(no)
+fi
 
 dnl link.sh tries to avoid overlinking in a hackish way.
 dnl At least GNU ld supports --as-needed which provides the same functionality

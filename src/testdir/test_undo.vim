@@ -4,22 +4,82 @@
 " Also tests :earlier and :later.
 
 func Test_undotree()
-  exe "normal Aabc\<Esc>"
+  new
+
+  normal! Aabc
   set ul=100
-  exe "normal Adef\<Esc>"
-  set ul=100
-  undo
   let d = undotree()
-  call assert_true(d.seq_last > 0)
-  call assert_true(d.seq_cur > 0)
-  call assert_true(d.seq_cur < d.seq_last)
-  call assert_true(len(d.entries) > 0)
-  " TODO: check more members of d
+  call assert_equal(1, d.seq_last)
+  call assert_equal(1, d.seq_cur)
+  call assert_equal(0, d.save_last)
+  call assert_equal(0, d.save_cur)
+  call assert_equal(1, len(d.entries))
+  call assert_equal(1, d.entries[0].newhead)
+  call assert_equal(1, d.entries[0].seq)
+  call assert_true(d.entries[0].time <= d.time_cur)
+
+  normal! Adef
+  set ul=100
+  let d = undotree()
+  call assert_equal(2, d.seq_last)
+  call assert_equal(2, d.seq_cur)
+  call assert_equal(0, d.save_last)
+  call assert_equal(0, d.save_cur)
+  call assert_equal(2, len(d.entries))
+  call assert_equal(1, d.entries[0].seq)
+  call assert_equal(1, d.entries[1].newhead)
+  call assert_equal(2, d.entries[1].seq)
+  call assert_true(d.entries[1].time <= d.time_cur)
+
+  undo
+  set ul=100
+  let d = undotree()
+  call assert_equal(2, d.seq_last)
+  call assert_equal(1, d.seq_cur)
+  call assert_equal(0, d.save_last)
+  call assert_equal(0, d.save_cur)
+  call assert_equal(2, len(d.entries))
+  call assert_equal(1, d.entries[0].seq)
+  call assert_equal(1, d.entries[1].curhead)
+  call assert_equal(1, d.entries[1].newhead)
+  call assert_equal(2, d.entries[1].seq)
+  call assert_true(d.entries[1].time == d.time_cur)
+
+  normal! Aghi
+  set ul=100
+  let d = undotree()
+  call assert_equal(3, d.seq_last)
+  call assert_equal(3, d.seq_cur)
+  call assert_equal(0, d.save_last)
+  call assert_equal(0, d.save_cur)
+  call assert_equal(2, len(d.entries))
+  call assert_equal(1, d.entries[0].seq)
+  call assert_equal(2, d.entries[1].alt[0].seq)
+  call assert_equal(1, d.entries[1].newhead)
+  call assert_equal(3, d.entries[1].seq)
+  call assert_true(d.entries[1].time <= d.time_cur)
+
+  undo
+  set ul=100
+  let d = undotree()
+  call assert_equal(3, d.seq_last)
+  call assert_equal(1, d.seq_cur)
+  call assert_equal(0, d.save_last)
+  call assert_equal(0, d.save_cur)
+  call assert_equal(2, len(d.entries))
+  call assert_equal(1, d.entries[0].seq)
+  call assert_equal(2, d.entries[1].alt[0].seq)
+  call assert_equal(1, d.entries[1].curhead)
+  call assert_equal(1, d.entries[1].newhead)
+  call assert_equal(3, d.entries[1].seq)
+  call assert_true(d.entries[1].time == d.time_cur)
 
   w! Xtest
-  call assert_equal(d.save_last + 1, undotree().save_last)
+  let d = undotree()
+  call assert_equal(1, d.save_cur)
+  call assert_equal(1, d.save_last)
   call delete('Xtest')
-  bwipe Xtest
+  bwipe! Xtest
 endfunc
 
 func FillBuffer()
@@ -190,6 +250,7 @@ func Test_undojoin_redo()
 endfunc
 
 func Test_undo_write()
+  call delete('Xtest')
   split Xtest
   call feedkeys("ione one one\<Esc>", 'xt')
   w!
@@ -288,4 +349,64 @@ func Test_cmd_in_reg_undo()
   call assert_equal(0, &modified)
   only!
   let @a=''
+endfunc
+
+" This used to cause an illegal memory access
+func Test_undo_append()
+  new
+  call feedkeys("axx\<Esc>v", 'xt')
+  undo
+  norm o
+  quit
+endfunc
+
+func Test_undo_0()
+  new
+  set ul=100
+  normal i1
+  undo
+  normal i2
+  undo
+  normal i3
+
+  undo 0
+  let d = undotree()
+  call assert_equal('', getline(1))
+  call assert_equal(0, d.seq_cur)
+
+  redo
+  let d = undotree()
+  call assert_equal('3', getline(1))
+  call assert_equal(3, d.seq_cur)
+
+  undo 2
+  undo 0
+  let d = undotree()
+  call assert_equal('', getline(1))
+  call assert_equal(0, d.seq_cur)
+
+  redo
+  let d = undotree()
+  call assert_equal('2', getline(1))
+  call assert_equal(2, d.seq_cur)
+
+  undo 1
+  undo 0
+  let d = undotree()
+  call assert_equal('', getline(1))
+  call assert_equal(0, d.seq_cur)
+
+  redo
+  let d = undotree()
+  call assert_equal('1', getline(1))
+  call assert_equal(1, d.seq_cur)
+
+  bwipe!
+endfunc
+
+func Test_redo_empty_line()
+  new
+  exe "norm\x16r\x160"
+  exe "norm."
+  bwipe!
 endfunc

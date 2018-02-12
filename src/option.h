@@ -235,7 +235,8 @@
 #define GO_TOOLBAR	'T'		/* add toolbar */
 #define GO_FOOTER	'F'		/* add footer */
 #define GO_VERTICAL	'v'		/* arrange dialog buttons vertically */
-#define GO_ALL		"aAbcefFghilmMprtTv" /* all possible flags for 'go' */
+#define GO_KEEPWINSIZE	'k'		/* keep GUI window size */
+#define GO_ALL		"aAbcefFghilmMprtTvk" /* all possible flags for 'go' */
 
 /* flags for 'comments' option */
 #define COM_NEST	'n'		/* comments strings nest */
@@ -375,10 +376,15 @@ EXTERN char_u	*p_bsk;		/* 'backupskip' */
 EXTERN char_u	*p_cm;		/* 'cryptmethod' */
 #endif
 #ifdef FEAT_BEVAL
-EXTERN long	p_bdlay;	/* 'balloondelay' */
+# ifdef FEAT_BEVAL_GUI
 EXTERN int	p_beval;	/* 'ballooneval' */
+# endif
+EXTERN long	p_bdlay;	/* 'balloondelay' */
 # ifdef FEAT_EVAL
 EXTERN char_u	*p_bexpr;
+# endif
+# ifdef FEAT_BEVAL_TERM
+EXTERN int	p_bevalterm;	/* 'balloonevalterm' */
 # endif
 #endif
 #ifdef FEAT_BROWSE
@@ -418,6 +424,7 @@ EXTERN int	p_cp;		/* 'compatible' */
 #ifdef FEAT_INS_EXPAND
 EXTERN char_u	*p_cot;		/* 'completeopt' */
 EXTERN long	p_ph;		/* 'pumheight' */
+EXTERN long	p_pw;		/* 'pumwidth' */
 #endif
 EXTERN char_u	*p_cpo;		/* 'cpoptions' */
 #ifdef FEAT_CSCOPE
@@ -575,13 +582,15 @@ EXTERN char_u	*p_iconstring;	/* 'iconstring' */
 EXTERN int	p_ic;		/* 'ignorecase' */
 #if defined(FEAT_XIM) && defined(FEAT_GUI_GTK)
 EXTERN char_u	*p_imak;	/* 'imactivatekey' */
+#define IM_ON_THE_SPOT		0L
+#define IM_OVER_THE_SPOT	1L
+EXTERN long	p_imst;		/* 'imstyle' */
+#endif
+#if defined(FEAT_EVAL) && defined(FEAT_MBYTE)
 EXTERN char_u	*p_imaf;	/* 'imactivatefunc' */
 EXTERN char_u	*p_imsf;	/* 'imstatusfunc' */
-EXTERN long	p_imst;		/* 'imstyle' */
-# define IM_ON_THE_SPOT		0L
-# define IM_OVER_THE_SPOT	1L
 #endif
-#ifdef USE_IM_CONTROL
+#ifdef FEAT_MBYTE
 EXTERN int	p_imcmdline;	/* 'imcmdline' */
 EXTERN int	p_imdisable;	/* 'imdisable' */
 #endif
@@ -688,8 +697,14 @@ EXTERN char_u	*p_perldll;	/* 'perldll' */
 #if defined(DYNAMIC_PYTHON3)
 EXTERN char_u	*p_py3dll;	/* 'pythonthreedll' */
 #endif
+#ifdef FEAT_PYTHON3
+EXTERN char_u	*p_py3home;	/* 'pythonthreehome' */
+#endif
 #if defined(DYNAMIC_PYTHON)
 EXTERN char_u	*p_pydll;	/* 'pythondll' */
+#endif
+#ifdef FEAT_PYTHON
+EXTERN char_u	*p_pyhome;	/* 'pythonhome' */
 #endif
 #if defined(FEAT_PYTHON) || defined(FEAT_PYTHON3)
 EXTERN long	p_pyx;		/* 'pyxversion' */

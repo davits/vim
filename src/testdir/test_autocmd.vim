@@ -1,6 +1,5 @@
 " Tests for autocommands
 
-
 func! s:cleanup_buffers() abort
   for bnr in range(1, bufnr('$'))
     if bufloaded(bnr) && bufnr('%') != bnr
@@ -813,6 +812,18 @@ func Test_QuitPre()
 endfunc
 
 func Test_Cmdline()
+  au! CmdlineChanged : let g:text = getcmdline()
+  let g:text = 0
+  call feedkeys(":echom 'hello'\<CR>", 'xt')
+  call assert_equal("echom 'hello'", g:text)
+  au! CmdlineChanged
+
+  au! CmdlineChanged : let g:entered = expand('<afile>')
+  let g:entered = 0
+  call feedkeys(":echom 'hello'\<CR>", 'xt')
+  call assert_equal(':', g:entered)
+  au! CmdlineChanged
+
   au! CmdlineEnter : let g:entered = expand('<afile>')
   au! CmdlineLeave : let g:left = expand('<afile>')
   let g:entered = 0
@@ -916,4 +927,380 @@ func Test_buflocal_autocmd()
   call assert_equal('', g:bname)
   enew
   unlet g:bname
+endfunc
+
+" Test for "*Cmd" autocommands
+func Test_Cmd_Autocmds()
+  call writefile(['start of Xxx', "\tabc2", 'end of Xxx'], 'Xxx')
+
+  enew!
+  au BufReadCmd XtestA 0r Xxx|$del
+  edit XtestA			" will read text of Xxd instead
+  call assert_equal('start of Xxx', getline(1))
+
+  au BufWriteCmd XtestA call append(line("$"), "write")
+  write				" will append a line to the file
+  call assert_equal('write', getline('$'))
+  call assert_fails('read XtestA', 'E484')	" should not read anything
+  call assert_equal('write', getline(4))
+
+  " now we have:
+  " 1	start of Xxx
+  " 2		abc2
+  " 3	end of Xxx
+  " 4	write
+
+  au FileReadCmd XtestB '[r Xxx
+  2r XtestB			" will read Xxx below line 2 instead
+  call assert_equal('start of Xxx', getline(3))
+
+  " now we have:
+  " 1	start of Xxx
+  " 2		abc2
+  " 3	start of Xxx
+  " 4		abc2
+  " 5	end of Xxx
+  " 6	end of Xxx
+  " 7	write
+
+  au FileWriteCmd XtestC '[,']copy $
+  normal 4GA1
+  4,5w XtestC			" will copy lines 4 and 5 to the end
+  call assert_equal("\tabc21", getline(8))
+  call assert_fails('r XtestC', 'E484')	" should not read anything
+  call assert_equal("end of Xxx", getline(9))
+
+  " now we have:
+  " 1	start of Xxx
+  " 2		abc2
+  " 3	start of Xxx
+  " 4		abc21
+  " 5	end of Xxx
+  " 6	end of Xxx
+  " 7	write
+  " 8		abc21
+  " 9	end of Xxx
+
+  let g:lines = []
+  au FileAppendCmd XtestD call extend(g:lines, getline(line("'["), line("']")))
+  w >>XtestD			" will add lines to 'lines'
+  call assert_equal(9, len(g:lines))
+  call assert_fails('$r XtestD', 'E484')	" should not read anything
+  call assert_equal(9, line('$'))
+  call assert_equal('end of Xxx', getline('$'))
+
+  au BufReadCmd XtestE 0r Xxx|$del
+  sp XtestE			" split window with test.out
+  call assert_equal('end of Xxx', getline(3))
+
+  let g:lines = []
+  exe "normal 2Goasdf\<Esc>\<C-W>\<C-W>"
+  au BufWriteCmd XtestE call extend(g:lines, getline(0, '$'))
+  wall				" will write other window to 'lines'
+  call assert_equal(4, len(g:lines), g:lines)
+  call assert_equal('asdf', g:lines[2])
+
+  au! BufReadCmd
+  au! BufWriteCmd
+  au! FileReadCmd
+  au! FileWriteCmd
+  au! FileAppendCmd
+  %bwipe!
+  call delete('Xxx')
+  enew!
+endfunc
+
+func SetChangeMarks(start, end)
+  exe a:start. 'mark ['
+  exe a:end. 'mark ]'
+endfunc
+
+" Verify the effects of autocmds on '[ and ']
+func Test_change_mark_in_autocmds()
+  edit! Xtest
+  call feedkeys("ia\<CR>b\<CR>c\<CR>d\<C-g>u", 'xtn')
+
+  call SetChangeMarks(2, 3)
+  write
+  call assert_equal([1, 4], [line("'["), line("']")])
+
+  call SetChangeMarks(2, 3)
+  au BufWritePre * call assert_equal([1, 4], [line("'["), line("']")])
+  write
+  au! BufWritePre
+
+  if executable('cat')
+    write XtestFilter
+    write >> XtestFilter
+
+    call SetChangeMarks(2, 3)
+    " Marks are set to the entire range of the write
+    au FilterWritePre * call assert_equal([1, 4], [line("'["), line("']")])
+    " '[ is adjusted to just before the line that will receive the filtered
+    " data
+    au FilterReadPre * call assert_equal([4, 4], [line("'["), line("']")])
+    " The filtered data is read into the buffer, and the source lines are
+    " still present, so the range is after the source lines
+    au FilterReadPost * call assert_equal([5, 12], [line("'["), line("']")])
+    %!cat XtestFilter
+    " After the filtered data is read, the original lines are deleted
+    call assert_equal([1, 8], [line("'["), line("']")])
+    au! FilterWritePre,FilterReadPre,FilterReadPost
+    undo
+
+    call SetChangeMarks(1, 4)
+    au FilterWritePre * call assert_equal([2, 3], [line("'["), line("']")])
+    au FilterReadPre * call assert_equal([3, 3], [line("'["), line("']")])
+    au FilterReadPost * call assert_equal([4, 11], [line("'["), line("']")])
+    2,3!cat XtestFilter
+    call assert_equal([2, 9], [line("'["), line("']")])
+    au! FilterWritePre,FilterReadPre,FilterReadPost
+    undo
+
+    call delete('XtestFilter')
+  endif
+
+  call SetChangeMarks(1, 4)
+  au FileWritePre * call assert_equal([2, 3], [line("'["), line("']")])
+  2,3write Xtest2
+  au! FileWritePre
+
+  call SetChangeMarks(2, 3)
+  au FileAppendPre * call assert_equal([1, 4], [line("'["), line("']")])
+  write >> Xtest2
+  au! FileAppendPre
+
+  call SetChangeMarks(1, 4)
+  au FileAppendPre * call assert_equal([2, 3], [line("'["), line("']")])
+  2,3write >> Xtest2
+  au! FileAppendPre
+
+  call SetChangeMarks(1, 1)
+  au FileReadPre * call assert_equal([3, 1], [line("'["), line("']")])
+  au FileReadPost * call assert_equal([4, 11], [line("'["), line("']")])
+  3read Xtest2
+  au! FileReadPre,FileReadPost
+  undo
+
+  call SetChangeMarks(4, 4)
+  " When the line is 0, it's adjusted to 1
+  au FileReadPre * call assert_equal([1, 4], [line("'["), line("']")])
+  au FileReadPost * call assert_equal([1, 8], [line("'["), line("']")])
+  0read Xtest2
+  au! FileReadPre,FileReadPost
+  undo
+
+  call SetChangeMarks(4, 4)
+  " When the line is 0, it's adjusted to 1
+  au FileReadPre * call assert_equal([1, 4], [line("'["), line("']")])
+  au FileReadPost * call assert_equal([2, 9], [line("'["), line("']")])
+  1read Xtest2
+  au! FileReadPre,FileReadPost
+  undo
+
+  bwipe!
+  call delete('Xtest')
+  call delete('Xtest2')
+endfunc
+
+func Test_Filter_noshelltemp()
+  if !executable('cat')
+    return
+  endif
+
+  enew!
+  call setline(1, ['a', 'b', 'c', 'd'])
+
+  let shelltemp = &shelltemp
+  set shelltemp
+
+  let g:filter_au = 0
+  au FilterWritePre * let g:filter_au += 1
+  au FilterReadPre * let g:filter_au += 1
+  au FilterReadPost * let g:filter_au += 1
+  %!cat
+  call assert_equal(3, g:filter_au)
+
+  if has('filterpipe')
+    set noshelltemp
+
+    let g:filter_au = 0
+    au FilterWritePre * let g:filter_au += 1
+    au FilterReadPre * let g:filter_au += 1
+    au FilterReadPost * let g:filter_au += 1
+    %!cat
+    call assert_equal(0, g:filter_au)
+  endif
+
+  au! FilterWritePre,FilterReadPre,FilterReadPost
+  let &shelltemp = shelltemp
+  bwipe!
+endfunc
+
+func Test_TextYankPost()
+  enew!
+  call setline(1, ['foo'])
+
+  let g:event = []
+  au TextYankPost * let g:event = copy(v:event)
+
+  call assert_equal({}, v:event)
+  call assert_fails('let v:event = {}', 'E46:')
+  call assert_fails('let v:event.mykey = 0', 'E742:')
+
+  norm "ayiw
+  call assert_equal(
+    \{'regcontents': ['foo'], 'regname': 'a', 'operator': 'y', 'regtype': 'v'},
+    \g:event)
+  norm y_
+  call assert_equal(
+    \{'regcontents': ['foo'], 'regname': '',  'operator': 'y', 'regtype': 'V'},
+    \g:event)
+  call feedkeys("\<C-V>y", 'x')
+  call assert_equal(
+    \{'regcontents': ['f'], 'regname': '',  'operator': 'y', 'regtype': "\x161"},
+    \g:event)
+  norm "xciwbar
+  call assert_equal(
+    \{'regcontents': ['foo'], 'regname': 'x', 'operator': 'c', 'regtype': 'v'},
+    \g:event)
+  norm "bdiw
+  call assert_equal(
+    \{'regcontents': ['bar'], 'regname': 'b', 'operator': 'd', 'regtype': 'v'},
+    \g:event)
+
+  call assert_equal({}, v:event)
+
+  au! TextYankPost
+  unlet g:event
+  bwipe!
+endfunc
+
+func Test_nocatch_wipe_all_buffers()
+  " Real nasty autocommand: wipe all buffers on any event.
+  au * * bwipe *
+  call assert_fails('next x', 'E93')
+  bwipe
+  au!
+endfunc
+
+func Test_nocatch_wipe_dummy_buffer()
+  " Nasty autocommand: wipe buffer on any event.
+  au * x bwipe
+  call assert_fails('lv½ /x', 'E480')
+  au!
+endfunc
+
+function s:Before_test_dirchanged()
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+  let s:li = []
+  let s:dir_this = getcwd()
+  let s:dir_other = s:dir_this . '/foo'
+  call mkdir(s:dir_other)
+endfunc
+
+function s:After_test_dirchanged()
+  exe 'cd' s:dir_this
+  call delete(s:dir_other, 'd')
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+endfunc
+
+function Test_dirchanged_global()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChanged global call add(s:li, "cd:")
+  autocmd test_dirchanged DirChanged global call add(s:li, expand("<afile>"))
+  exe 'cd' s:dir_other
+  call assert_equal(["cd:", s:dir_other], s:li)
+  exe 'lcd' s:dir_other
+  call assert_equal(["cd:", s:dir_other], s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_local()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChanged window call add(s:li, "lcd:")
+  autocmd test_dirchanged DirChanged window call add(s:li, expand("<afile>"))
+  exe 'cd' s:dir_other
+  call assert_equal([], s:li)
+  exe 'lcd' s:dir_other
+  call assert_equal(["lcd:", s:dir_other], s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_auto()
+  if !exists('+autochdir')
+    return
+  endif
+  call s:Before_test_dirchanged()
+  call test_autochdir()
+  autocmd test_dirchanged DirChanged auto call add(s:li, "auto:")
+  autocmd test_dirchanged DirChanged auto call add(s:li, expand("<afile>"))
+  set acd
+  exe 'cd ..'
+  call assert_equal([], s:li)
+  exe 'edit ' . s:dir_other . '/Xfile'
+  call assert_equal(s:dir_other, getcwd())
+  call assert_equal(["auto:", s:dir_other], s:li)
+  set noacd
+  bwipe!
+  call s:After_test_dirchanged()
+endfunc
+
+" Test TextChangedI and TextChangedP
+func Test_ChangedP()
+  new
+  call setline(1, ['foo', 'bar', 'foobar'])
+  call test_override("char_avail", 1)
+  set complete=. completeopt=menuone
+
+  func! TextChangedAutocmd(char)
+    let g:autocmd .= a:char
+  endfunc
+
+  au! TextChanged <buffer> :call TextChangedAutocmd('N')
+  au! TextChangedI <buffer> :call TextChangedAutocmd('I')
+  au! TextChangedP <buffer> :call TextChangedAutocmd('P')
+
+  call cursor(3, 1)
+  let g:autocmd = ''
+  call feedkeys("o\<esc>", 'tnix')
+  call assert_equal('I', g:autocmd)
+
+  let g:autocmd = ''
+  call feedkeys("Sf", 'tnix')
+  call assert_equal('II', g:autocmd)
+
+  let g:autocmd = ''
+  call feedkeys("Sf\<C-N>", 'tnix')
+  call assert_equal('IIP', g:autocmd)
+
+  let g:autocmd = ''
+  call feedkeys("Sf\<C-N>\<C-N>", 'tnix')
+  call assert_equal('IIPP', g:autocmd)
+
+  let g:autocmd = ''
+  call feedkeys("Sf\<C-N>\<C-N>\<C-N>", 'tnix')
+  call assert_equal('IIPPP', g:autocmd)
+
+  let g:autocmd = ''
+  call feedkeys("Sf\<C-N>\<C-N>\<C-N>\<C-N>", 'tnix')
+  call assert_equal('IIPPPP', g:autocmd)
+
+  call assert_equal(['foo', 'bar', 'foobar', 'foo'], getline(1, '$'))
+  " TODO: how should it handle completeopt=noinsert,noselect?
+
+  " CleanUp
+  call test_override("char_avail", 0)
+  au! TextChanged
+  au! TextChangedI
+  au! TextChangedP
+  delfu TextChangedAutocmd
+  unlet! g:autocmd
+  set complete&vim completeopt&vim
+
+  bw!
 endfunc
