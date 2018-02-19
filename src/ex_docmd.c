@@ -201,9 +201,6 @@ static void	ex_wrongmodifier(exarg_T *eap);
 static void	ex_find(exarg_T *eap);
 static void	ex_open(exarg_T *eap);
 static void	ex_edit(exarg_T *eap);
-#if !defined(FEAT_GUI) && !defined(FEAT_CLIENTSERVER)
-# define ex_drop		ex_ni
-#endif
 #ifndef FEAT_GUI
 # define ex_gui			ex_nogui
 static void	ex_nogui(exarg_T *eap);
@@ -2883,8 +2880,18 @@ do_one_cmd(
     }
 #endif
 
+    /* The :try command saves the emsg_silent flag, reset it here when
+     * ":silent! try" was used, it should only apply to :try itself. */
+    if (ea.cmdidx == CMD_try && did_esilent > 0)
+    {
+	emsg_silent -= did_esilent;
+	if (emsg_silent < 0)
+	    emsg_silent = 0;
+	did_esilent = 0;
+    }
+
 /*
- * 7. Switch on command name.
+ * 7. Execute the command.
  *
  * The "ea" structure holds the arguments that can be used.
  */
