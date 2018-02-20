@@ -68,5 +68,29 @@ flags_gtk2 = [
 
 ]
 
+flags_gtk2_snps = [
+
+'-x', 'c',
+
+'-I', src_dir,
+'-I', path.join(src_dir, 'proto'),
+'-I/usr/include/gtk-2.0',
+'-I/usr/lib64/gtk-2.0/include',
+'-I/usr/include/atk-1.0',
+'-I/usr/include/cairo',
+'-I/usr/include/gdk-pixbuf-2.0',
+'-I/usr/include/pango-1.0',
+'-I/usr/include/glib-2.0',
+'-I/usr/lib64/glib-2.0/include',
+'-I/usr/include/pixman-1',
+'-I/usr/include/freetype2',
+'-I/usr/include/libpng12',
+'-DHAVE_CONFIG_H',
+'-DFEAT_GUI_GTK',
+'-U_FORTIFY_SOURCE',
+'-D_FORTIFY_SOURCE=1'
+
+]
+
 def FlagsForFile( filename, **kwargs ):
-  return { 'flags': flags_gtk2 }
+  return { 'flags': flags_gtk2_snps }
