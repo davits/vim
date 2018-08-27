@@ -244,7 +244,6 @@ op_shift(oparg_T *oap, int curs_top, int amount)
 {
     long	    i;
     int		    first_char;
-    char_u	    *s;
     int		    block_col = 0;
 
     if (u_save((linenr_T)(oap->start.lnum - 1),
@@ -297,26 +296,21 @@ op_shift(oparg_T *oap, int curs_top, int amount)
 
     if (oap->line_count > p_report)
     {
+	char	    *op;
+	char	    *msg_line_single;
+	char	    *msg_line_plural;
+
 	if (oap->op_type == OP_RSHIFT)
-	    s = (char_u *)">";
+	    op = ">";
 	else
-	    s = (char_u *)"<";
-	if (oap->line_count == 1)
-	{
-	    if (amount == 1)
-		sprintf((char *)IObuff, _("1 line %sed 1 time"), s);
-	    else
-		sprintf((char *)IObuff, _("1 line %sed %d times"), s, amount);
-	}
-	else
-	{
-	    if (amount == 1)
-		sprintf((char *)IObuff, _("%ld lines %sed 1 time"),
-							  oap->line_count, s);
-	    else
-		sprintf((char *)IObuff, _("%ld lines %sed %d times"),
-						  oap->line_count, s, amount);
-	}
+	    op = "<";
+	msg_line_single = NGETTEXT("%ld line %sed %d time",
+					     "%ld line %sed %d times", amount);
+	msg_line_plural = NGETTEXT("%ld lines %sed %d time",
+					    "%ld lines %sed %d times", amount);
+	vim_snprintf((char *)IObuff, IOSIZE,
+		NGETTEXT(msg_line_single, msg_line_plural, oap->line_count),
+		oap->line_count, op, amount);
 	msg(IObuff);
     }
 
@@ -376,11 +370,9 @@ shift_line(
     }
 
     /* Set new indent */
-#ifdef FEAT_VREPLACE
     if (State & VREPLACE_FLAG)
 	change_indent(INDENT_SET, count, FALSE, NUL, call_changed_bytes);
     else
-#endif
 	(void)set_indent(count, call_changed_bytes ? SIN_CHANGED : 0);
 }
 
@@ -791,10 +783,8 @@ op_reindent(oparg_T *oap, int (*how)(void))
     if (oap->line_count > p_report)
     {
 	i = oap->line_count - (i + 1);
-	if (i == 1)
-	    MSG(_("1 line indented "));
-	else
-	    smsg((char_u *)_("%ld lines indented "), i);
+	smsg((char_u *)NGETTEXT("%ld line indented ",
+						 "%ld lines indented ", i), i);
     }
     /* set '[ and '] marks */
     curbuf->b_op_start = oap->start;
@@ -1723,12 +1713,12 @@ yank_do_autocmd(oparg_T *oap, yankreg_T *reg)
 
     buf[0] = (char_u)oap->regname;
     buf[1] = NUL;
-    dict_add_nr_str(v_event, "regname", 0, buf);
+    dict_add_string(v_event, "regname", buf);
 
     buf[0] = get_op_char(oap->op_type);
     buf[1] = get_extra_op_char(oap->op_type);
     buf[2] = NUL;
-    dict_add_nr_str(v_event, "operator", 0, buf);
+    dict_add_string(v_event, "operator", buf);
 
     buf[0] = NUL;
     buf[1] = NUL;
@@ -1741,7 +1731,7 @@ yank_do_autocmd(oparg_T *oap, yankreg_T *reg)
 			     reglen + 1);
 		break;
     }
-    dict_add_nr_str(v_event, "regtype", 0, buf);
+    dict_add_string(v_event, "regtype", buf);
 
     /* Lock the dictionary and its keys */
     dict_set_items_ro(v_event);
@@ -2146,6 +2136,25 @@ mb_adjust_opend(oparg_T *oap)
 #endif
 
 #if defined(FEAT_VISUALEXTRA) || defined(PROTO)
+
+# ifdef FEAT_MBYTE
+/*
+ * Replace the character under the cursor with "c".
+ * This takes care of multi-byte characters.
+ */
+    static void
+replace_character(int c)
+{
+    int n = State;
+
+    State = REPLACE;
+    ins_char(c);
+    State = n;
+    /* Backup to the replaced character. */
+    dec_cursor();
+}
+
+# endif
 /*
  * Replace a whole area with one character.
  */
@@ -2331,12 +2340,7 @@ op_replace(oparg_T *oap, int c)
 		     * with a multi-byte and the other way around. */
 		    if (curwin->w_cursor.lnum == oap->end.lnum)
 			oap->end.col += (*mb_char2len)(c) - (*mb_char2len)(n);
-		    n = State;
-		    State = REPLACE;
-		    ins_char(c);
-		    State = n;
-		    /* Backup to the replaced character. */
-		    dec_cursor();
+		    replace_character(c);
 		}
 		else
 #endif
@@ -2358,7 +2362,7 @@ op_replace(oparg_T *oap, int c)
 			    getvpos(&oap->end, end_vcol);
 		    }
 #endif
-		    PCHAR(curwin->w_cursor, c);
+		    PBYTE(curwin->w_cursor, c);
 		}
 	    }
 #ifdef FEAT_VIRTUALEDIT
@@ -2377,9 +2381,14 @@ op_replace(oparg_T *oap, int c)
 		curwin->w_cursor.col -= (virtcols + 1);
 		for (; virtcols >= 0; virtcols--)
 		{
-		    PCHAR(curwin->w_cursor, c);
-		    if (inc(&curwin->w_cursor) == -1)
-			break;
+#ifdef FEAT_MBYTE
+                   if ((*mb_char2len)(c) > 1)
+		       replace_character(c);
+                   else
+ #endif
+			PBYTE(curwin->w_cursor, c);
+		   if (inc(&curwin->w_cursor) == -1)
+		       break;
 		}
 	    }
 #endif
@@ -2512,12 +2521,8 @@ op_tilde(oparg_T *oap)
     curbuf->b_op_end = oap->end;
 
     if (oap->line_count > p_report)
-    {
-	if (oap->line_count == 1)
-	    MSG(_("1 line changed"));
-	else
-	    smsg((char_u *)_("%ld lines changed"), oap->line_count);
-    }
+	smsg((char_u *)NGETTEXT("%ld line changed", "%ld lines changed",
+					    oap->line_count), oap->line_count);
 }
 
 /*
@@ -2619,7 +2624,7 @@ swapchar(int op_type, pos_T *pos)
 	}
 	else
 #endif
-	    PCHAR(*pos, nc);
+	    PBYTE(*pos, nc);
 	return TRUE;
     }
     return FALSE;
@@ -3331,19 +3336,18 @@ op_yank(oparg_T *oap, int deleting, int mess)
 
 	    /* redisplay now, so message is not deleted */
 	    update_topline_redraw();
-	    if (yanklines == 1)
+	    if (oap->block_mode)
 	    {
-		if (oap->block_mode)
-		    smsg((char_u *)_("block of 1 line yanked%s"), namebuf);
-		else
-		    smsg((char_u *)_("1 line yanked%s"), namebuf);
+		smsg((char_u *)NGETTEXT("block of %ld line yanked%s",
+				     "block of %ld lines yanked%s", yanklines),
+			yanklines, namebuf);
 	    }
-	    else if (oap->block_mode)
-		smsg((char_u *)_("block of %ld lines yanked%s"),
-		     yanklines, namebuf);
 	    else
-		smsg((char_u *)_("%ld lines yanked%s"), yanklines,
-		     namebuf);
+	    {
+		smsg((char_u *)NGETTEXT("%ld line yanked%s",
+					      "%ld lines yanked%s", yanklines),
+			yanklines, namebuf);
+	    }
 	}
     }
 
@@ -3551,9 +3555,10 @@ do_put(
 	    return;
     }
 
-    /* Autocommands may be executed when saving lines for undo, which may make
-     * y_array invalid.  Start undo now to avoid that. */
-    u_save(curwin->w_cursor.lnum, curwin->w_cursor.lnum + 1);
+    /* Autocommands may be executed when saving lines for undo.  This might
+     * make "y_array" invalid, so we start undo now to avoid that. */
+    if (u_save(curwin->w_cursor.lnum, curwin->w_cursor.lnum + 1) == FAIL)
+	goto end;
 
     if (insert_string != NULL)
     {
@@ -5635,12 +5640,8 @@ op_addsub(
 	    curbuf->b_op_start = startpos;
 
 	if (change_cnt > p_report)
-	{
-	    if (change_cnt == 1)
-		MSG(_("1 line changed"));
-	    else
-		smsg((char_u *)_("%ld lines changed"), change_cnt);
-	}
+	    smsg((char_u *)NGETTEXT("%ld line changed", "%ld lines changed",
+						      change_cnt), change_cnt);
     }
 }
 
@@ -7621,19 +7622,19 @@ cursor_pos_info(dict_T *dict)
 #if defined(FEAT_EVAL)
     if (dict != NULL)
     {
-	dict_add_nr_str(dict, "words", word_count, NULL);
-	dict_add_nr_str(dict, "chars", char_count, NULL);
-	dict_add_nr_str(dict, "bytes", byte_count
+	dict_add_number(dict, "words", word_count);
+	dict_add_number(dict, "chars", char_count);
+	dict_add_number(dict, "bytes", byte_count
 # ifdef FEAT_MBYTE
 		+ bom_count
 # endif
-		, NULL);
-	dict_add_nr_str(dict, VIsual_active ? "visual_bytes" : "cursor_bytes",
-		byte_count_cursor, NULL);
-	dict_add_nr_str(dict, VIsual_active ? "visual_chars" : "cursor_chars",
-		char_count_cursor, NULL);
-	dict_add_nr_str(dict, VIsual_active ? "visual_words" : "cursor_words",
-		word_count_cursor, NULL);
+		);
+	dict_add_number(dict, VIsual_active ? "visual_bytes" : "cursor_bytes",
+		byte_count_cursor);
+	dict_add_number(dict, VIsual_active ? "visual_chars" : "cursor_chars",
+		char_count_cursor);
+	dict_add_number(dict, VIsual_active ? "visual_words" : "cursor_words",
+		word_count_cursor);
     }
 #endif
 }

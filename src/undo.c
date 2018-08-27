@@ -266,10 +266,8 @@ u_save(linenr_T top, linenr_T bot)
     if (undo_off)
 	return OK;
 
-    if (top > curbuf->b_ml.ml_line_count
-	    || top >= bot
-	    || bot > curbuf->b_ml.ml_line_count + 1)
-	return FALSE;	/* rely on caller to do error messages */
+    if (top >= bot || bot > curbuf->b_ml.ml_line_count + 1)
+	return FAIL;	// rely on caller to give an error message
 
     if (top + 2 == bot)
 	u_saveline((linenr_T)(top + 1));
@@ -2968,7 +2966,7 @@ u_undo_end(
     }
 #endif
 
-    smsg((char_u *)_("%ld %s; %s #%ld  %s"),
+    smsg_attr_keep(0, (char_u *)_("%ld %s; %s #%ld  %s"),
 	    u_oldcount < 0 ? -u_oldcount : u_oldcount,
 	    _(msgstr),
 	    did_undo ? _("before") : _("after"),
@@ -3126,8 +3124,13 @@ u_add_time(char_u *buf, size_t buflen, time_t tt)
     }
     else
 #endif
-	vim_snprintf((char *)buf, buflen, _("%ld seconds ago"),
-						      (long)(vim_time() - tt));
+    {
+	long seconds = (long)(vim_time() - tt);
+
+	vim_snprintf((char *)buf, buflen,
+		NGETTEXT("%ld second ago", "%ld seconds ago", seconds),
+		seconds);
+    }
 }
 
 /*
@@ -3567,14 +3570,14 @@ u_eval_tree(u_header_T *first_uhp, list_T *list)
 	dict = dict_alloc();
 	if (dict == NULL)
 	    return;
-	dict_add_nr_str(dict, "seq", uhp->uh_seq, NULL);
-	dict_add_nr_str(dict, "time", (long)uhp->uh_time, NULL);
+	dict_add_number(dict, "seq", uhp->uh_seq);
+	dict_add_number(dict, "time", (long)uhp->uh_time);
 	if (uhp == curbuf->b_u_newhead)
-	    dict_add_nr_str(dict, "newhead", 1, NULL);
+	    dict_add_number(dict, "newhead", 1);
 	if (uhp == curbuf->b_u_curhead)
-	    dict_add_nr_str(dict, "curhead", 1, NULL);
+	    dict_add_number(dict, "curhead", 1);
 	if (uhp->uh_save_nr > 0)
-	    dict_add_nr_str(dict, "save", uhp->uh_save_nr, NULL);
+	    dict_add_number(dict, "save", uhp->uh_save_nr);
 
 	if (uhp->uh_alt_next.ptr != NULL)
 	{

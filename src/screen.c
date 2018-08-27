@@ -447,32 +447,37 @@ redraw_after_callback(int call_update_screen)
     ++redrawing_for_callback;
 
     if (State == HITRETURN || State == ASKMORE)
-	; /* do nothing */
+	; // do nothing
     else if (State & CMDLINE)
     {
-	/* Redrawing only works when the screen didn't scroll. Don't clear
-	 * wildmenu entries. */
-	if (msg_scrolled == 0
+	// Don't redraw when in prompt_for_number().
+	if (cmdline_row > 0)
+	{
+	    // Redrawing only works when the screen didn't scroll. Don't clear
+	    // wildmenu entries.
+	    if (msg_scrolled == 0
 #ifdef FEAT_WILDMENU
-		&& wild_menu_showing == 0
+		    && wild_menu_showing == 0
 #endif
-		&& call_update_screen)
-	    update_screen(0);
-	/* Redraw in the same position, so that the user can continue
-	 * editing the command. */
-	redrawcmdline_ex(FALSE);
+		    && call_update_screen)
+		update_screen(0);
+
+	    // Redraw in the same position, so that the user can continue
+	    // editing the command.
+	    redrawcmdline_ex(FALSE);
+	}
     }
     else if (State & (NORMAL | INSERT | TERMINAL))
     {
-	/* keep the command line if possible */
+	// keep the command line if possible
 	update_screen(VALID_NO_UPDATE);
 	setcursor();
     }
     cursor_on();
 #ifdef FEAT_GUI
     if (gui.in_use && !gui_mch_is_blink_off())
-	/* Don't update the cursor when it is blinking and off to avoid
-	 * flicker. */
+	// Don't update the cursor when it is blinking and off to avoid
+	// flicker.
 	out_flush_cursor(FALSE, FALSE);
     else
 #endif
@@ -525,6 +530,12 @@ reset_updating_screen(int may_resize_shell UNUSED)
 #endif
 #ifdef FEAT_TERMINAL
     term_check_channel_closed_recently();
+#endif
+
+#ifdef HAVE_DROP_FILE
+    // If handle_drop() was called while updating_screen was TRUE need to
+    // handle the drop now.
+    handle_any_postponed_drop();
 #endif
 }
 
@@ -4753,13 +4764,13 @@ win_line(
 		    n_extra = win_lbr_chartabsize(wp, line, p, (colnr_T)vcol,
 								    NULL) - 1;
 		    if (c == TAB && n_extra + col > wp->w_width)
-#ifdef FEAT_VARTABS
+# ifdef FEAT_VARTABS
 			n_extra = tabstop_padding(vcol, wp->w_buffer->b_p_ts,
-					wp->w_buffer->b_p_vts_array) - 1;
-#else
+					      wp->w_buffer->b_p_vts_array) - 1;
+# else
 			n_extra = (int)wp->w_buffer->b_p_ts
 				       - vcol % (int)wp->w_buffer->b_p_ts - 1;
- #endif
+# endif
 
 # ifdef FEAT_MBYTE
 		    c_extra = mb_off > 0 ? MB_FILLER_CHAR : ' ';
@@ -4902,6 +4913,11 @@ win_line(
 			p_extra_free = p;
 			for (i = 0; i < tab_len; i++)
 			{
+			    if (*p == NUL)
+			    {
+				tab_len = i;
+				break;
+			    }
 #ifdef FEAT_MBYTE
 			    mb_char2bytes(lcs_tab2, p);
 			    p += mb_char2len(lcs_tab2);
@@ -7881,6 +7897,13 @@ next_search_hl(
     long	nmatched;
     int		save_called_emsg = called_emsg;
 
+    // for :{range}s/pat only highlight inside the range
+    if (lnum < search_first_line || lnum > search_last_line)
+    {
+	shl->lnum = 0;
+	return;
+    }
+
     if (shl->lnum != 0)
     {
 	/* Check for three situations:
@@ -10370,12 +10393,9 @@ showmode(void)
 	    else
 #endif
 	    {
-#ifdef FEAT_VREPLACE
 		if (State & VREPLACE_FLAG)
 		    MSG_PUTS_ATTR(_(" VREPLACE"), attr);
-		else
-#endif
-		    if (State & REPLACE_FLAG)
+		else if (State & REPLACE_FLAG)
 		    MSG_PUTS_ATTR(_(" REPLACE"), attr);
 		else if (State & INSERT)
 		{

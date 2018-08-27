@@ -2997,7 +2997,8 @@ static struct vimoption options[] =
 			    {(char_u *)0L, (char_u *)0L}
 #endif
 			    SCRIPTID_INIT},
-    {"viminfofile", "vif",  P_STRING|P_ONECOMMA|P_NODUP|P_SECURE|P_VI_DEF,
+    {"viminfofile", "vif",  P_STRING|P_EXPAND|P_ONECOMMA|P_NODUP
+							    |P_SECURE|P_VI_DEF,
 #ifdef FEAT_VIMINFO
 			    (char_u *)&p_viminfofile, PV_NONE,
 			    {(char_u *)"", (char_u *)0L}
@@ -3191,7 +3192,9 @@ static struct vimoption options[] =
     p_term("t_RB", T_RBG)
     p_term("t_RC", T_CRC)
     p_term("t_RI", T_CRI)
+    p_term("t_Ri", T_SRI)
     p_term("t_RS", T_CRS)
+    p_term("t_RT", T_CRT)
     p_term("t_RV", T_CRV)
     p_term("t_Sb", T_CSB)
     p_term("t_SC", T_CSC)
@@ -3199,9 +3202,11 @@ static struct vimoption options[] =
     p_term("t_Sf", T_CSF)
     p_term("t_SH", T_CSH)
     p_term("t_SI", T_CSI)
+    p_term("t_Si", T_SSI)
     p_term("t_so", T_SO)
     p_term("t_SR", T_CSR)
     p_term("t_sr", T_SR)
+    p_term("t_ST", T_CST)
     p_term("t_Te", T_STE)
     p_term("t_te", T_TE)
     p_term("t_ti", T_TI)
@@ -3315,7 +3320,7 @@ static char_u *set_bool_option(int opt_idx, char_u *varp, int value, int opt_fla
 static char_u *set_num_option(int opt_idx, char_u *varp, long value, char_u *errbuf, size_t errbuflen, int opt_flags);
 static void check_redraw(long_u flags);
 static int findoption(char_u *);
-static int find_key_option(char_u *);
+static int find_key_option(char_u *arg_arg, int has_lt);
 static void showoptions(int all, int opt_flags);
 static int optval_default(struct vimoption *, char_u *varp);
 static void showoneopt(struct vimoption *, int opt_flags);
@@ -4491,7 +4496,7 @@ do_set(
 		    opt_idx = findoption(arg + 1);
 		arg[len++] = '>';		    /* restore '>' */
 		if (opt_idx == -1)
-		    key = find_key_option(arg + 1);
+		    key = find_key_option(arg + 1, TRUE);
 	    }
 	    else
 	    {
@@ -4509,7 +4514,7 @@ do_set(
 		opt_idx = findoption(arg);
 		arg[len] = nextchar;		    /* restore nextchar */
 		if (opt_idx == -1)
-		    key = find_key_option(arg);
+		    key = find_key_option(arg, FALSE);
 	    }
 
 	    /* remember character after option name */
@@ -5361,7 +5366,7 @@ illegal_char(char_u *errbuf, int c)
 string_to_key(char_u *arg, int multi_byte)
 {
     if (*arg == '<')
-	return find_key_option(arg + 1);
+	return find_key_option(arg + 1, TRUE);
     if (*arg == '^')
 	return Ctrl_chr(arg[1]);
     if (multi_byte)
@@ -8819,10 +8824,13 @@ set_bool_option(
 # endif
 	    highlight_gui_started();
 # ifdef FEAT_VTP
-	control_console_color_rgb();
 	/* reset t_Co */
 	if (is_term_win32())
+	{
+	    control_console_color_rgb();
 	    set_termname(T_NAME);
+	    init_highlight(TRUE, FALSE);
+	}
 # endif
     }
 #endif
@@ -9537,7 +9545,7 @@ get_option_value(
 	int key;
 
 	if (STRLEN(name) == 4 && name[0] == 't' && name[1] == '_'
-		&& (key = find_key_option(name)) != 0)
+		&& (key = find_key_option(name, FALSE)) != 0)
 	{
 	    char_u key_name[2];
 	    char_u *p;
@@ -9827,7 +9835,7 @@ set_option_value(
 	int key;
 
 	if (STRLEN(name) == 4 && name[0] == 't' && name[1] == '_'
-		&& (key = find_key_option(name)) != 0)
+		&& (key = find_key_option(name, FALSE)) != 0)
 	{
 	    char_u key_name[2];
 
@@ -9948,12 +9956,15 @@ get_encoding_default(void)
 
 /*
  * Translate a string like "t_xx", "<t_xx>" or "<S-Tab>" to a key number.
+ * When "has_lt" is true there is a '<' before "*arg_arg".
+ * Returns 0 when the key is not recognized.
  */
     static int
-find_key_option(char_u *arg)
+find_key_option(char_u *arg_arg, int has_lt)
 {
-    int		key;
+    int		key = 0;
     int		modifiers;
+    char_u	*arg = arg_arg;
 
     /*
      * Don't use get_special_key_code() for t_xx, we don't want it to call
@@ -9961,7 +9972,7 @@ find_key_option(char_u *arg)
      */
     if (arg[0] == 't' && arg[1] == '_' && arg[2] && arg[3])
 	key = TERMCAP2KEY(arg[2], arg[3]);
-    else
+    else if (has_lt)
     {
 	--arg;			    /* put arg at the '<' */
 	modifiers = 0;
@@ -10407,7 +10418,7 @@ clear_termoptions(void)
     mch_setmouse(FALSE);	    /* switch mouse off */
 #endif
 #ifdef FEAT_TITLE
-    mch_restore_title(3);	    /* restore window titles */
+    mch_restore_title(SAVE_RESTORE_BOTH);    /* restore window titles */
 #endif
 #if defined(FEAT_XCLIPBOARD) && defined(FEAT_GUI)
     /* When starting the GUI close the display opened for the clipboard.
@@ -11212,8 +11223,8 @@ buf_copy_options(buf_T *buf, int flags)
 		buf->b_p_isk = NULL;
 	    }
 	    /*
-	     * Always free the allocated strings.
-	     * If not already initialized, set 'readonly' and copy 'fileformat'.
+	     * Always free the allocated strings.  If not already initialized,
+	     * reset 'readonly' and copy 'fileformat'.
 	     */
 	    if (!buf->b_p_initialized)
 	    {
@@ -12867,7 +12878,7 @@ tabstop_start(colnr_T col, int ts, int *vts)
 tabstop_fromto(
 	colnr_T start_col,
 	colnr_T end_col,
-	int	ts,
+	int	ts_arg,
 	int	*vts,
 	int	*ntabs,
 	int	*nspcs)
@@ -12877,12 +12888,14 @@ tabstop_fromto(
     int		padding = 0;
     int		tabcount;
     int		t;
+    int		ts = ts_arg == 0 ? curbuf->b_p_ts : ts_arg;
 
     if (vts == NULL || vts[0] == 0)
     {
 	int tabs = 0;
-	int initspc = ts - (start_col % ts);
+	int initspc = 0;
 
+	initspc = ts - (start_col % ts);
 	if (spaces >= initspc)
 	{
 	    spaces -= initspc;
@@ -13011,7 +13024,7 @@ get_sw_value(buf_T *buf)
 
 /*
  * Return the effective softtabstop value for the current buffer, using the
- * 'tabstop' value when 'softtabstop' is negative.
+ * 'shiftwidth' value when 'softtabstop' is negative.
  */
     long
 get_sts_value(void)
@@ -13217,11 +13230,11 @@ get_winbuf_options(int bufopt)
 	    if (varp != NULL)
 	    {
 		if (opt->flags & P_STRING)
-		    dict_add_nr_str(d, opt->fullname, 0L, *(char_u **)varp);
+		    dict_add_string(d, opt->fullname, *(char_u **)varp);
 		else if (opt->flags & P_NUM)
-		    dict_add_nr_str(d, opt->fullname, *(long *)varp, NULL);
+		    dict_add_number(d, opt->fullname, *(long *)varp);
 		else
-		    dict_add_nr_str(d, opt->fullname, *(int *)varp, NULL);
+		    dict_add_number(d, opt->fullname, *(int *)varp);
 	    }
 	}
     }

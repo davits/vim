@@ -1525,6 +1525,32 @@ func Test_terminwinscroll()
   exe buf . 'bwipe!'
 endfunc
 
+" Resizing the terminal window caused an ml_get error.
+" TODO: This does not reproduce the original problem.
+func Test_terminal_resize()
+  set statusline=x
+  terminal
+  call assert_equal(2, winnr('$'))
+
+  " Fill the terminal with text.
+  if has('win32')
+    call feedkeys("dir\<CR>", 'xt')
+  else
+    call feedkeys("ls\<CR>", 'xt')
+  endif
+  " Go to Terminal-Normal mode for a moment.
+  call feedkeys("\<C-W>N", 'xt')
+  " Open a new window
+  call feedkeys("i\<C-W>n", 'xt')
+  call assert_equal(3, winnr('$'))
+  redraw
+
+  close
+  call assert_equal(2, winnr('$'))
+  call feedkeys("exit\<CR>", 'xt')
+  set statusline&
+endfunc
+
 " must be nearly the last, we can't go back from GUI to terminal
 func Test_zz1_terminal_in_gui()
   if !CanRunGui()
@@ -1578,4 +1604,32 @@ func Test_zz2_terminal_guioptions_bang()
 
   set guioptions&
   call delete(filename)
+endfunc
+
+func Test_terminal_hidden()
+  if !has('unix')
+    return
+  endif
+  term ++hidden cat
+  let bnr = bufnr('$')
+  call assert_equal('terminal', getbufvar(bnr, '&buftype'))
+  exe 'sbuf ' . bnr
+  call assert_equal('terminal', &buftype)
+  call term_sendkeys(bnr, "asdf\<CR>")
+  call WaitForAssert({-> assert_match('asdf', term_getline(bnr, 2))})
+  call term_sendkeys(bnr, "\<C-D>")
+  call WaitForAssert({-> assert_equal('finished', term_getstatus(bnr))})
+  bwipe!
+endfunc
+
+func Test_terminal_hidden_and_close()
+  if !has('unix')
+    return
+  endif
+  call assert_equal(1, winnr('$'))
+  term ++hidden ++close ls
+  let bnr = bufnr('$')
+  call assert_equal('terminal', getbufvar(bnr, '&buftype'))
+  call WaitForAssert({-> assert_false(bufexists(bnr))})
+  call assert_equal(1, winnr('$'))
 endfunc

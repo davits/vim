@@ -2820,8 +2820,7 @@ gui_mch_find_dialog(exarg_T *eap)
 		s_findrep_hwnd = FindText((LPFINDREPLACE) &s_findrep_struct);
 	}
 
-	set_window_title(s_findrep_hwnd,
-			       _("Find string (use '\\\\' to find a '\\')"));
+	set_window_title(s_findrep_hwnd, _("Find string"));
 	(void)SetFocus(s_findrep_hwnd);
 
 	s_findrep_is_find = TRUE;
@@ -2855,8 +2854,7 @@ gui_mch_replace_dialog(exarg_T *eap)
 					   (LPFINDREPLACE) &s_findrep_struct);
 	}
 
-	set_window_title(s_findrep_hwnd,
-			    _("Find & Replace (use '\\\\' to find a '\\')"));
+	set_window_title(s_findrep_hwnd, _("Find & Replace"));
 	(void)SetFocus(s_findrep_hwnd);
 
 	s_findrep_is_find = FALSE;
@@ -8922,28 +8920,21 @@ gui_mch_create_beval_area(
 	return NULL;
     }
 
-    beval = (BalloonEval *)alloc(sizeof(BalloonEval));
+    beval = (BalloonEval *)alloc_clear(sizeof(BalloonEval));
     if (beval != NULL)
     {
 	beval->target = s_textArea;
-	beval->balloon = NULL;
 
 	beval->showState = ShS_NEUTRAL;
-	beval->x = 0;
-	beval->y = 0;
 	beval->msg = mesg;
 	beval->msgCB = mesgCB;
 	beval->clientData = clientData;
-#ifdef FEAT_VARTABS
-	beval->vts = NULL;
-#endif
 
 	InitCommonControls();
 	cur_beval = beval;
 
 	if (p_beval)
 	    gui_mch_enable_beval_area(beval);
-
     }
     return beval;
 }

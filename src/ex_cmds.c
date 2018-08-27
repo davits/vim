@@ -281,7 +281,7 @@ linelen(int *has_tab)
     *last = NUL;
     len = linetabsize(line);		/* get line length */
     if (has_tab != NULL)		/* check for embedded TAB */
-	*has_tab = (vim_strrchr(first, TAB) != NULL);
+	*has_tab = (vim_strchr(first, TAB) != NULL);
     *last = save;
 
     return len;
@@ -398,6 +398,7 @@ ex_sort(exarg_T *eap)
     colnr_T	end_col;
     int		sort_what = 0;
     int		format_found = 0;
+    int		change_occurred = FALSE; // Buffer contents changed.
 
     /* Sorting one line is really quick! */
     if (count <= 1)
@@ -616,12 +617,19 @@ ex_sort(exarg_T *eap)
     lnum = eap->line2;
     for (i = 0; i < count; ++i)
     {
-	s = ml_get(nrs[eap->forceit ? count - i - 1 : i].lnum);
+	linenr_T get_lnum = nrs[eap->forceit ? count - i - 1 : i].lnum;
+
+	// If the original line number of the line being placed is not the same
+	// as "lnum" (accounting for offset), we know that the buffer changed.
+	if (get_lnum + ((linenr_T)count - 1) != lnum)
+	    change_occurred = TRUE;
+
+	s = ml_get(get_lnum);
 	if (!unique || i == 0
 		|| (sort_ic ? STRICMP(s, sortbuf1) : STRCMP(s, sortbuf1)) != 0)
 	{
-	    /* Copy the line into a buffer, it may become invalid in
-	     * ml_append(). And it's needed for "unique". */
+	    // Copy the line into a buffer, it may become invalid in
+	    // ml_append(). And it's needed for "unique".
 	    STRCPY(sortbuf1, s);
 	    if (ml_append(lnum++, sortbuf1, (colnr_T)0, FALSE) == FAIL)
 		break;
@@ -644,7 +652,9 @@ ex_sort(exarg_T *eap)
 	mark_adjust(eap->line2 - deleted, eap->line2, (long)MAXLNUM, -deleted);
     else if (deleted < 0)
 	mark_adjust(eap->line2, MAXLNUM, -deleted, 0L);
-    changed_lines(eap->line1, 0, eap->line2 + 1, -deleted);
+
+    if (change_occurred || deleted != 0)
+	changed_lines(eap->line1, 0, eap->line2 + 1, -deleted);
 
     curwin->w_cursor.lnum = eap->line1;
     beginline(BL_WHITE | BL_FIX);
@@ -856,7 +866,6 @@ ex_retab(exarg_T *eap)
 	{
 	    set_string_option_direct((char_u *)"vts", -1, new_ts_str,
 							OPT_FREE|OPT_LOCAL, 0);
-	    vim_free(new_ts_str);
 	    curbuf->b_p_vts_array = new_vts_array;
 	    vim_free(old_vts_ary);
 	}
@@ -867,6 +876,7 @@ ex_retab(exarg_T *eap)
 	    curbuf->b_p_ts = tabstop_first(new_vts_array);
 	    vim_free(new_vts_array);
 	}
+	vim_free(new_ts_str);
     }
 #else
     curbuf->b_p_ts = new_ts;
@@ -975,12 +985,8 @@ do_move(linenr_T line1, linenr_T line2, linenr_T dest)
 	ml_delete(line1 + extra, TRUE);
 
     if (!global_busy && num_lines > p_report)
-    {
-	if (num_lines == 1)
-	    MSG(_("1 line moved"));
-	else
-	    smsg((char_u *)_("%ld lines moved"), num_lines);
-    }
+	smsg((char_u *)NGETTEXT("%ld line moved", "%ld lines moved", num_lines),
+			(long)num_lines);
 
     /*
      * Leave the cursor on the last of the moved lines.
@@ -5930,23 +5936,29 @@ do_sub_msg(
 		|| count_only)
 	    && messaging())
     {
+	char	*msg_single;
+	char	*msg_plural;
+
 	if (got_int)
 	    STRCPY(msg_buf, _("(Interrupted) "));
 	else
 	    *msg_buf = NUL;
-	if (sub_nsubs == 1)
-	    vim_snprintf_add((char *)msg_buf, sizeof(msg_buf),
-		    "%s", count_only ? _("1 match") : _("1 substitution"));
-	else
-	    vim_snprintf_add((char *)msg_buf, sizeof(msg_buf),
-		    count_only ? _("%ld matches") : _("%ld substitutions"),
-								   sub_nsubs);
-	if (sub_nlines == 1)
-	    vim_snprintf_add((char *)msg_buf, sizeof(msg_buf),
-		    "%s", _(" on 1 line"));
-	else
-	    vim_snprintf_add((char *)msg_buf, sizeof(msg_buf),
-		    _(" on %ld lines"), (long)sub_nlines);
+
+	msg_single = count_only
+		    ? NGETTEXT("%ld match on %ld line",
+					  "%ld matches on %ld line", sub_nsubs)
+		    : NGETTEXT("%ld substitution on %ld line",
+				   "%ld substitutions on %ld line", sub_nsubs);
+	msg_plural = count_only
+		    ? NGETTEXT("%ld match on %ld lines",
+					 "%ld matches on %ld lines", sub_nsubs)
+		    : NGETTEXT("%ld substitution on %ld lines",
+				  "%ld substitutions on %ld lines", sub_nsubs);
+
+	vim_snprintf_add((char *)msg_buf, sizeof(msg_buf),
+				 NGETTEXT(msg_single, msg_plural, sub_nlines),
+				 sub_nsubs, (long)sub_nlines);
+
 	if (msg(msg_buf))
 	    /* save message to display it after redraw */
 	    set_keep_msg(msg_buf, 0);
@@ -6574,6 +6586,7 @@ find_help_tags(
 			       "/*", "/\\*", "\"*", "**",
 			       "cpo-*", "/\\(\\)", "/\\%(\\)",
 			       "?", ":?", "?<CR>", "g?", "g?g?", "g??",
+			       "-?", "q?", "v_g?",
 			       "/\\?", "/\\z(\\)", "\\=", ":s\\=",
 			       "[count]", "[quotex]",
 			       "[range]", ":[range]",
@@ -6584,26 +6597,42 @@ find_help_tags(
 			       "/star", "/\\\\star", "quotestar", "starstar",
 			       "cpo-star", "/\\\\(\\\\)", "/\\\\%(\\\\)",
 			       "?", ":?", "?<CR>", "g?", "g?g?", "g??",
+			       "-?", "q?", "v_g?",
 			       "/\\\\?", "/\\\\z(\\\\)", "\\\\=", ":s\\\\=",
 			       "\\[count]", "\\[quotex]",
 			       "\\[range]", ":\\[range]",
 			       "\\[pattern]", "\\\\bar", "/\\\\%\\$",
 			       "s/\\\\\\~", "s/\\\\U", "s/\\\\L",
 			       "s/\\\\1", "s/\\\\2", "s/\\\\3", "s/\\\\9"};
+    static char *(expr_table[]) = {"!=?", "!~?", "<=?", "<?", "==?", "=~?",
+				">=?", ">?", "is?", "isnot?"};
     int flags;
 
     d = IObuff;		    /* assume IObuff is long enough! */
 
-    /*
-     * Recognize a few exceptions to the rule.	Some strings that contain '*'
-     * with "star".  Otherwise '*' is recognized as a wildcard.
-     */
-    for (i = (int)(sizeof(mtable) / sizeof(char *)); --i >= 0; )
-	if (STRCMP(arg, mtable[i]) == 0)
-	{
-	    STRCPY(d, rtable[i]);
-	    break;
-	}
+    if (STRNICMP(arg, "expr-", 5) == 0)
+    {
+	// When the string starting with "expr-" and containing '?' and matches
+	// the table, it is taken literally.  Otherwise '?' is recognized as a
+	// wildcard.
+	for (i = (int)(sizeof(expr_table) / sizeof(char *)); --i >= 0; )
+	    if (STRCMP(arg + 5, expr_table[i]) == 0)
+	    {
+		STRCPY(d, arg);
+		break;
+	    }
+    }
+    else
+    {
+	// Recognize a few exceptions to the rule.  Some strings that contain
+	// '*' with "star".  Otherwise '*' is recognized as a wildcard.
+	for (i = (int)(sizeof(mtable) / sizeof(char *)); --i >= 0; )
+	    if (STRCMP(arg, mtable[i]) == 0)
+	    {
+		STRCPY(d, rtable[i]);
+		break;
+	    }
+    }
 
     if (i < 0)	/* no match in table */
     {

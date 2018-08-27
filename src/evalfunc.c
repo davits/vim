@@ -409,6 +409,7 @@ static void f_strdisplaywidth(typval_T *argvars, typval_T *rettv);
 static void f_strwidth(typval_T *argvars, typval_T *rettv);
 static void f_submatch(typval_T *argvars, typval_T *rettv);
 static void f_substitute(typval_T *argvars, typval_T *rettv);
+static void f_swapinfo(typval_T *argvars, typval_T *rettv);
 static void f_synID(typval_T *argvars, typval_T *rettv);
 static void f_synIDattr(typval_T *argvars, typval_T *rettv);
 static void f_synIDtrans(typval_T *argvars, typval_T *rettv);
@@ -474,6 +475,7 @@ static void f_win_screenpos(typval_T *argvars, typval_T *rettv);
 static void f_winbufnr(typval_T *argvars, typval_T *rettv);
 static void f_wincol(typval_T *argvars, typval_T *rettv);
 static void f_winheight(typval_T *argvars, typval_T *rettv);
+static void f_winlayout(typval_T *argvars, typval_T *rettv);
 static void f_winline(typval_T *argvars, typval_T *rettv);
 static void f_winnr(typval_T *argvars, typval_T *rettv);
 static void f_winrestcmd(typval_T *argvars, typval_T *rettv);
@@ -876,6 +878,7 @@ static struct fst
     {"strwidth",	1, 1, f_strwidth},
     {"submatch",	1, 2, f_submatch},
     {"substitute",	4, 4, f_substitute},
+    {"swapinfo",	1, 1, f_swapinfo},
     {"synID",		3, 3, f_synID},
     {"synIDattr",	2, 3, f_synIDattr},
     {"synIDtrans",	1, 1, f_synIDtrans},
@@ -970,6 +973,7 @@ static struct fst
     {"winbufnr",	1, 1, f_winbufnr},
     {"wincol",		0, 0, f_wincol},
     {"winheight",	1, 1, f_winheight},
+    {"winlayout",	0, 1, f_winlayout},
     {"winline",		0, 0, f_winline},
     {"winnr",		0, 1, f_winnr},
     {"winrestcmd",	0, 0, f_winrestcmd},
@@ -2875,9 +2879,7 @@ f_delete(typval_T *argvars, typval_T *rettv)
  * "deletebufline()" function
  */
     static void
-f_deletebufline(argvars, rettv)
-    typval_T	*argvars;
-    typval_T	*rettv;
+f_deletebufline(typval_T *argvars, typval_T *rettv)
 {
     buf_T	*buf;
     linenr_T	first, last;
@@ -3821,7 +3823,7 @@ f_fnamemodify(typval_T *argvars, typval_T *rettv)
     else
     {
 	len = (int)STRLEN(fname);
-	(void)modify_fname(mods, &usedlen, &fname, &fbuf, &len);
+	(void)modify_fname(mods, FALSE, &usedlen, &fname, &fbuf, &len);
     }
 
     rettv->v_type = VAR_STRING;
@@ -4356,9 +4358,9 @@ get_buffer_signs(buf_T *buf, list_T *l)
 
 	if (d != NULL)
 	{
-	    dict_add_nr_str(d, "id", sign->id, NULL);
-	    dict_add_nr_str(d, "lnum", sign->lnum, NULL);
-	    dict_add_nr_str(d, "name", 0L, sign_typenr2name(sign->typenr));
+	    dict_add_number(d, "id", sign->id);
+	    dict_add_number(d, "lnum", sign->lnum);
+	    dict_add_string(d, "name", sign_typenr2name(sign->typenr));
 
 	    list_append_dict(l, d);
 	}
@@ -4381,18 +4383,16 @@ get_buffer_info(buf_T *buf)
     if (dict == NULL)
 	return NULL;
 
-    dict_add_nr_str(dict, "bufnr", buf->b_fnum, NULL);
-    dict_add_nr_str(dict, "name", 0L,
-	    buf->b_ffname != NULL ? buf->b_ffname : (char_u *)"");
-    dict_add_nr_str(dict, "lnum", buf == curbuf ? curwin->w_cursor.lnum
-						: buflist_findlnum(buf), NULL);
-    dict_add_nr_str(dict, "loaded", buf->b_ml.ml_mfp != NULL, NULL);
-    dict_add_nr_str(dict, "listed", buf->b_p_bl, NULL);
-    dict_add_nr_str(dict, "changed", bufIsChanged(buf), NULL);
-    dict_add_nr_str(dict, "changedtick", CHANGEDTICK(buf), NULL);
-    dict_add_nr_str(dict, "hidden",
-		    buf->b_ml.ml_mfp != NULL && buf->b_nwindows == 0,
-		    NULL);
+    dict_add_number(dict, "bufnr", buf->b_fnum);
+    dict_add_string(dict, "name", buf->b_ffname);
+    dict_add_number(dict, "lnum", buf == curbuf ? curwin->w_cursor.lnum
+						     : buflist_findlnum(buf));
+    dict_add_number(dict, "loaded", buf->b_ml.ml_mfp != NULL);
+    dict_add_number(dict, "listed", buf->b_p_bl);
+    dict_add_number(dict, "changed", bufIsChanged(buf));
+    dict_add_number(dict, "changedtick", CHANGEDTICK(buf));
+    dict_add_number(dict, "hidden",
+			    buf->b_ml.ml_mfp != NULL && buf->b_nwindows == 0);
 
     /* Get a reference to buffer variables */
     dict_add_dict(dict, "variables", buf->b_vars);
@@ -4681,10 +4681,10 @@ f_getchangelist(typval_T *argvars, typval_T *rettv)
 	    return;
 	if (list_append_dict(l, d) == FAIL)
 	    return;
-	dict_add_nr_str(d, "lnum", (long)buf->b_changelist[i].lnum, NULL);
-	dict_add_nr_str(d, "col", (long)buf->b_changelist[i].col, NULL);
+	dict_add_number(d, "lnum", (long)buf->b_changelist[i].lnum);
+	dict_add_number(d, "col", (long)buf->b_changelist[i].col);
 # ifdef FEAT_VIRTUALEDIT
-	dict_add_nr_str(d, "coladd", (long)buf->b_changelist[i].coladd, NULL);
+	dict_add_number(d, "coladd", (long)buf->b_changelist[i].coladd);
 # endif
     }
 #endif
@@ -4808,9 +4808,9 @@ f_getcharsearch(typval_T *argvars UNUSED, typval_T *rettv)
     {
 	dict_T *dict = rettv->vval.v_dict;
 
-	dict_add_nr_str(dict, "char", 0L, last_csearch());
-	dict_add_nr_str(dict, "forward", last_csearch_forward(), NULL);
-	dict_add_nr_str(dict, "until", last_csearch_until(), NULL);
+	dict_add_string(dict, "char", last_csearch());
+	dict_add_number(dict, "forward", last_csearch_forward());
+	dict_add_number(dict, "until", last_csearch_until());
     }
 }
 
@@ -5110,63 +5110,22 @@ f_getftype(typval_T *argvars, typval_T *rettv)
     rettv->v_type = VAR_STRING;
     if (mch_lstat((char *)fname, &st) >= 0)
     {
-#ifdef S_ISREG
 	if (S_ISREG(st.st_mode))
 	    t = "file";
 	else if (S_ISDIR(st.st_mode))
 	    t = "dir";
-# ifdef S_ISLNK
 	else if (S_ISLNK(st.st_mode))
 	    t = "link";
-# endif
-# ifdef S_ISBLK
 	else if (S_ISBLK(st.st_mode))
 	    t = "bdev";
-# endif
-# ifdef S_ISCHR
 	else if (S_ISCHR(st.st_mode))
 	    t = "cdev";
-# endif
-# ifdef S_ISFIFO
 	else if (S_ISFIFO(st.st_mode))
 	    t = "fifo";
-# endif
-# ifdef S_ISSOCK
 	else if (S_ISSOCK(st.st_mode))
-	    t = "fifo";
-# endif
+	    t = "socket";
 	else
 	    t = "other";
-#else
-# ifdef S_IFMT
-	switch (st.st_mode & S_IFMT)
-	{
-	    case S_IFREG: t = "file"; break;
-	    case S_IFDIR: t = "dir"; break;
-#  ifdef S_IFLNK
-	    case S_IFLNK: t = "link"; break;
-#  endif
-#  ifdef S_IFBLK
-	    case S_IFBLK: t = "bdev"; break;
-#  endif
-#  ifdef S_IFCHR
-	    case S_IFCHR: t = "cdev"; break;
-#  endif
-#  ifdef S_IFIFO
-	    case S_IFIFO: t = "fifo"; break;
-#  endif
-#  ifdef S_IFSOCK
-	    case S_IFSOCK: t = "socket"; break;
-#  endif
-	    default: t = "other";
-	}
-# else
-	if (mch_isdir(fname))
-	    t = "dir";
-	else
-	    t = "file";
-# endif
-#endif
 	type = vim_strsave((char_u *)t);
     }
     rettv->vval.v_string = type;
@@ -5211,17 +5170,14 @@ f_getjumplist(typval_T *argvars, typval_T *rettv)
 	    return;
 	if (list_append_dict(l, d) == FAIL)
 	    return;
-	dict_add_nr_str(d, "lnum", (long)wp->w_jumplist[i].fmark.mark.lnum,
-		NULL);
-	dict_add_nr_str(d, "col", (long)wp->w_jumplist[i].fmark.mark.col,
-		NULL);
+	dict_add_number(d, "lnum", (long)wp->w_jumplist[i].fmark.mark.lnum);
+	dict_add_number(d, "col", (long)wp->w_jumplist[i].fmark.mark.col);
 # ifdef FEAT_VIRTUALEDIT
-	dict_add_nr_str(d, "coladd", (long)wp->w_jumplist[i].fmark.mark.coladd,
-		NULL);
+	dict_add_number(d, "coladd", (long)wp->w_jumplist[i].fmark.mark.coladd);
 # endif
-	dict_add_nr_str(d, "bufnr", (long)wp->w_jumplist[i].fmark.fnum, NULL);
+	dict_add_number(d, "bufnr", (long)wp->w_jumplist[i].fmark.fnum);
 	if (wp->w_jumplist[i].fname != NULL)
-	    dict_add_nr_str(d, "filename", 0L, wp->w_jumplist[i].fname);
+	    dict_add_string(d, "filename", wp->w_jumplist[i].fname);
     }
 #endif
 }
@@ -5339,18 +5295,18 @@ f_getmatches(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 	    }
 	    else
 	    {
-		dict_add_nr_str(dict, "pattern", 0L, cur->pattern);
+		dict_add_string(dict, "pattern", cur->pattern);
 	    }
-	    dict_add_nr_str(dict, "group", 0L, syn_id2name(cur->hlg_id));
-	    dict_add_nr_str(dict, "priority", (long)cur->priority, NULL);
-	    dict_add_nr_str(dict, "id", (long)cur->id, NULL);
+	    dict_add_string(dict, "group", syn_id2name(cur->hlg_id));
+	    dict_add_number(dict, "priority", (long)cur->priority);
+	    dict_add_number(dict, "id", (long)cur->id);
 # if defined(FEAT_CONCEAL) && defined(FEAT_MBYTE)
 	    if (cur->conceal_char)
 	    {
 		char_u buf[MB_MAXBYTES + 1];
 
 		buf[(*mb_char2bytes)((int)cur->conceal_char, buf)] = NUL;
-		dict_add_nr_str(dict, "conceal", 0L, (char_u *)&buf);
+		dict_add_string(dict, "conceal", (char_u *)&buf);
 	    }
 # endif
 	    list_append_dict(rettv->vval.v_list, dict);
@@ -5551,7 +5507,7 @@ get_tabpage_info(tabpage_T *tp, int tp_idx)
     if (dict == NULL)
 	return NULL;
 
-    dict_add_nr_str(dict, "tabnr", tp_idx, NULL);
+    dict_add_number(dict, "tabnr", tp_idx);
 
     l = list_alloc();
     if (l != NULL)
@@ -5667,23 +5623,25 @@ get_win_info(win_T *wp, short tpnr, short winnr)
     if (dict == NULL)
 	return NULL;
 
-    dict_add_nr_str(dict, "tabnr", tpnr, NULL);
-    dict_add_nr_str(dict, "winnr", winnr, NULL);
-    dict_add_nr_str(dict, "winid", wp->w_id, NULL);
-    dict_add_nr_str(dict, "height", wp->w_height, NULL);
+    dict_add_number(dict, "tabnr", tpnr);
+    dict_add_number(dict, "winnr", winnr);
+    dict_add_number(dict, "winid", wp->w_id);
+    dict_add_number(dict, "height", wp->w_height);
+    dict_add_number(dict, "winrow", wp->w_winrow + 1);
 #ifdef FEAT_MENU
-    dict_add_nr_str(dict, "winbar", wp->w_winbar_height, NULL);
+    dict_add_number(dict, "winbar", wp->w_winbar_height);
 #endif
-    dict_add_nr_str(dict, "width", wp->w_width, NULL);
-    dict_add_nr_str(dict, "bufnr", wp->w_buffer->b_fnum, NULL);
+    dict_add_number(dict, "width", wp->w_width);
+    dict_add_number(dict, "wincol", wp->w_wincol + 1);
+    dict_add_number(dict, "bufnr", wp->w_buffer->b_fnum);
 
 #ifdef FEAT_TERMINAL
-    dict_add_nr_str(dict, "terminal", bt_terminal(wp->w_buffer), NULL);
+    dict_add_number(dict, "terminal", bt_terminal(wp->w_buffer));
 #endif
 #ifdef FEAT_QUICKFIX
-    dict_add_nr_str(dict, "quickfix", bt_quickfix(wp->w_buffer), NULL);
-    dict_add_nr_str(dict, "loclist",
-	    (bt_quickfix(wp->w_buffer) && wp->w_llist_ref != NULL), NULL);
+    dict_add_number(dict, "quickfix", bt_quickfix(wp->w_buffer));
+    dict_add_number(dict, "loclist",
+		      (bt_quickfix(wp->w_buffer) && wp->w_llist_ref != NULL));
 #endif
 
     /* Add a reference to window variables */
@@ -6068,6 +6026,9 @@ f_has(typval_T *argvars, typval_T *rettv)
 	"arabic",
 #endif
 	"autocmd",
+#ifdef FEAT_AUTOCHDIR
+       "autochdir",
+#endif
 #ifdef FEAT_AUTOSERVERNAME
 	"autoservername",
 #endif
@@ -6326,7 +6287,9 @@ f_has(typval_T *argvars, typval_T *rettv)
 #ifdef FEAT_OVERLAY
 	"overlay",
 #endif
+#ifdef FEAT_EVAL
 	"packages",
+#endif
 #ifdef FEAT_PATH_EXTRA
 	"path_extra",
 #endif
@@ -6471,9 +6434,7 @@ f_has(typval_T *argvars, typval_T *rettv)
 #ifdef FEAT_VISUALEXTRA
 	"visualextra",
 #endif
-#ifdef FEAT_VREPLACE
 	"vreplace",
-#endif
 #ifdef FEAT_VTP
 	"vtp",
 #endif
@@ -6630,7 +6591,7 @@ f_has(typval_T *argvars, typval_T *rettv)
 #endif
 #ifdef FEAT_VTP
 	else if (STRICMP(name, "vcon") == 0)
-	    n = has_vtp_working();
+	    n = is_term_win32() && has_vtp_working();
 #endif
 #ifdef FEAT_NETBEANS_INTG
 	else if (STRICMP(name, "netbeans_enabled") == 0)
@@ -7673,15 +7634,15 @@ get_maparg(typval_T *argvars, typval_T *rettv, int exact)
 	char_u	    *mapmode = map_mode_to_chars(mp->m_mode);
 	dict_T	    *dict = rettv->vval.v_dict;
 
-	dict_add_nr_str(dict, "lhs",	 0L, lhs);
-	dict_add_nr_str(dict, "rhs",     0L, mp->m_orig_str);
-	dict_add_nr_str(dict, "noremap", mp->m_noremap ? 1L : 0L , NULL);
-	dict_add_nr_str(dict, "expr",    mp->m_expr    ? 1L : 0L, NULL);
-	dict_add_nr_str(dict, "silent",  mp->m_silent  ? 1L : 0L, NULL);
-	dict_add_nr_str(dict, "sid",     (long)mp->m_script_ID, NULL);
-	dict_add_nr_str(dict, "buffer",  (long)buffer_local, NULL);
-	dict_add_nr_str(dict, "nowait",  mp->m_nowait  ? 1L : 0L, NULL);
-	dict_add_nr_str(dict, "mode",    0L, mapmode);
+	dict_add_string(dict, "lhs", lhs);
+	dict_add_string(dict, "rhs", mp->m_orig_str);
+	dict_add_number(dict, "noremap", mp->m_noremap ? 1L : 0L);
+	dict_add_number(dict, "expr", mp->m_expr ? 1L : 0L);
+	dict_add_number(dict, "silent", mp->m_silent ? 1L : 0L);
+	dict_add_number(dict, "sid", (long)mp->m_script_ID);
+	dict_add_number(dict, "buffer", (long)buffer_local);
+	dict_add_number(dict, "nowait", mp->m_nowait ? 1L : 0L);
+	dict_add_string(dict, "mode", mapmode);
 
 	vim_free(lhs);
 	vim_free(mapmode);
@@ -8009,6 +7970,36 @@ f_match(typval_T *argvars, typval_T *rettv)
     find_some_match(argvars, rettv, MATCH_MATCH);
 }
 
+#ifdef FEAT_SEARCH_EXTRA
+    static int
+matchadd_dict_arg(typval_T *tv, char_u **conceal_char, win_T **win)
+{
+    dictitem_T *di;
+
+    if (tv->v_type != VAR_DICT)
+    {
+	EMSG(_(e_dictreq));
+	return FAIL;
+    }
+
+    if (dict_find(tv->vval.v_dict, (char_u *)"conceal", -1) != NULL)
+	*conceal_char = get_dict_string(tv->vval.v_dict,
+						   (char_u *)"conceal", FALSE);
+
+    if ((di = dict_find(tv->vval.v_dict, (char_u *)"window", -1)) != NULL)
+    {
+	*win = find_win_by_nr(&di->di_tv, NULL);
+	if (*win == NULL)
+	{
+	    EMSG(_("E957: Invalid window number"));
+	    return FAIL;
+	}
+    }
+
+    return OK;
+}
+#endif
+
 /*
  * "matchadd()" function
  */
@@ -8023,6 +8014,7 @@ f_matchadd(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
     int		id = -1;
     int		error = FALSE;
     char_u	*conceal_char = NULL;
+    win_T	*win = curwin;
 
     rettv->vval.v_number = -1;
 
@@ -8034,18 +8026,9 @@ f_matchadd(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 	if (argvars[3].v_type != VAR_UNKNOWN)
 	{
 	    id = (int)get_tv_number_chk(&argvars[3], &error);
-	    if (argvars[4].v_type != VAR_UNKNOWN)
-	    {
-		if (argvars[4].v_type != VAR_DICT)
-		{
-		    EMSG(_(e_dictreq));
-		    return;
-		}
-		if (dict_find(argvars[4].vval.v_dict,
-					     (char_u *)"conceal", -1) != NULL)
-		    conceal_char = get_dict_string(argvars[4].vval.v_dict,
-						  (char_u *)"conceal", FALSE);
-	    }
+	    if (argvars[4].v_type != VAR_UNKNOWN
+		&& matchadd_dict_arg(&argvars[4], &conceal_char, &win) == FAIL)
+		return;
 	}
     }
     if (error == TRUE)
@@ -8056,7 +8039,7 @@ f_matchadd(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 	return;
     }
 
-    rettv->vval.v_number = match_add(curwin, grp, pat, prio, id, NULL,
+    rettv->vval.v_number = match_add(win, grp, pat, prio, id, NULL,
 								conceal_char);
 #endif
 }
@@ -8075,6 +8058,7 @@ f_matchaddpos(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
     int		error = FALSE;
     list_T	*l;
     char_u	*conceal_char = NULL;
+    win_T	*win = curwin;
 
     rettv->vval.v_number = -1;
 
@@ -8097,18 +8081,10 @@ f_matchaddpos(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 	if (argvars[3].v_type != VAR_UNKNOWN)
 	{
 	    id = (int)get_tv_number_chk(&argvars[3], &error);
-	    if (argvars[4].v_type != VAR_UNKNOWN)
-	    {
-		if (argvars[4].v_type != VAR_DICT)
-		{
-		    EMSG(_(e_dictreq));
-		    return;
-		}
-		if (dict_find(argvars[4].vval.v_dict,
-					     (char_u *)"conceal", -1) != NULL)
-		    conceal_char = get_dict_string(argvars[4].vval.v_dict,
-						  (char_u *)"conceal", FALSE);
-	    }
+
+	    if (argvars[4].v_type != VAR_UNKNOWN
+		&& matchadd_dict_arg(&argvars[4], &conceal_char, &win) == FAIL)
+		return;
 	}
     }
     if (error == TRUE)
@@ -8121,7 +8097,7 @@ f_matchaddpos(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 	return;
     }
 
-    rettv->vval.v_number = match_add(curwin, group, NULL, prio, id, l,
+    rettv->vval.v_number = match_add(win, group, NULL, prio, id, l,
 								conceal_char);
 #endif
 }
@@ -8372,10 +8348,9 @@ f_mkdir(typval_T *argvars, typval_T *rettv)
     static void
 f_mode(typval_T *argvars, typval_T *rettv)
 {
-    char_u	buf[3];
+    char_u	buf[4];
 
-    buf[1] = NUL;
-    buf[2] = NUL;
+    vim_memset(buf, 0, sizeof(buf));
 
     if (time_for_testing == 93784)
     {
@@ -8407,14 +8382,12 @@ f_mode(typval_T *argvars, typval_T *rettv)
 	buf[0] = '!';
     else if (State & INSERT)
     {
-#ifdef FEAT_VREPLACE
 	if (State & VREPLACE_FLAG)
 	{
 	    buf[0] = 'R';
 	    buf[1] = 'v';
 	}
 	else
-#endif
 	{
 	    if (State & REPLACE_FLAG)
 		buf[0] = 'R';
@@ -8441,6 +8414,12 @@ f_mode(typval_T *argvars, typval_T *rettv)
 	buf[0] = 'n';
 	if (finish_op)
 	    buf[1] = 'o';
+	else if (restart_edit == 'I' || restart_edit == 'R'
+							|| restart_edit == 'V')
+	{
+	    buf[1] = 'i';
+	    buf[2] = restart_edit;
+	}
     }
 
     /* Clear out the minor mode when the argument is not a non-zero number or
@@ -10538,9 +10517,7 @@ f_serverlist(typval_T *argvars UNUSED, typval_T *rettv)
  * "setbufline()" function
  */
     static void
-f_setbufline(argvars, rettv)
-    typval_T	*argvars;
-    typval_T	*rettv;
+f_setbufline(typval_T *argvars, typval_T *rettv)
 {
     linenr_T	lnum;
     buf_T	*buf;
@@ -11677,6 +11654,7 @@ f_spellbadword(typval_T *argvars UNUSED, typval_T *rettv)
 		    break;
 		}
 		str += len;
+		capcol -= len;
 	    }
 	}
     }
@@ -12370,6 +12348,16 @@ f_substitute(typval_T *argvars, typval_T *rettv)
 	rettv->vval.v_string = NULL;
     else
 	rettv->vval.v_string = do_string_sub(str, pat, sub, expr, flg);
+}
+
+/*
+ * "swapinfo(swap_filename)" function
+ */
+    static void
+f_swapinfo(typval_T *argvars, typval_T *rettv)
+{
+    if (rettv_dict_alloc(rettv) == OK)
+	get_b0_dict(get_tv_string(argvars), rettv->vval.v_dict);
 }
 
 /*
@@ -13687,13 +13675,12 @@ f_undotree(typval_T *argvars UNUSED, typval_T *rettv)
 	dict_T *dict = rettv->vval.v_dict;
 	list_T *list;
 
-	dict_add_nr_str(dict, "synced", (long)curbuf->b_u_synced, NULL);
-	dict_add_nr_str(dict, "seq_last", curbuf->b_u_seq_last, NULL);
-	dict_add_nr_str(dict, "save_last",
-					(long)curbuf->b_u_save_nr_last, NULL);
-	dict_add_nr_str(dict, "seq_cur", curbuf->b_u_seq_cur, NULL);
-	dict_add_nr_str(dict, "time_cur", (long)curbuf->b_u_time_cur, NULL);
-	dict_add_nr_str(dict, "save_cur", (long)curbuf->b_u_save_nr_cur, NULL);
+	dict_add_number(dict, "synced", (long)curbuf->b_u_synced);
+	dict_add_number(dict, "seq_last", curbuf->b_u_seq_last);
+	dict_add_number(dict, "save_last", (long)curbuf->b_u_save_nr_last);
+	dict_add_number(dict, "seq_cur", curbuf->b_u_seq_cur);
+	dict_add_number(dict, "time_cur", (long)curbuf->b_u_time_cur);
+	dict_add_number(dict, "save_cur", (long)curbuf->b_u_save_nr_cur);
 
 	list = list_alloc();
 	if (list != NULL)
@@ -13802,6 +13789,29 @@ f_winheight(typval_T *argvars, typval_T *rettv)
 	rettv->vval.v_number = -1;
     else
 	rettv->vval.v_number = wp->w_height;
+}
+
+/*
+ * "winlayout()" function
+ */
+    static void
+f_winlayout(typval_T *argvars, typval_T *rettv)
+{
+    tabpage_T	*tp;
+
+    if (rettv_list_alloc(rettv) != OK)
+	return;
+
+    if (argvars[0].v_type == VAR_UNKNOWN)
+	tp = curtab;
+    else
+    {
+	tp = find_tabpage((int)get_tv_number(&argvars[0]));
+	if (tp == NULL)
+	    return;
+    }
+
+    get_framelayout(tp->tp_topframe, rettv->vval.v_list, TRUE);
 }
 
 /*
@@ -13917,20 +13927,20 @@ f_winsaveview(typval_T *argvars UNUSED, typval_T *rettv)
 	return;
     dict = rettv->vval.v_dict;
 
-    dict_add_nr_str(dict, "lnum", (long)curwin->w_cursor.lnum, NULL);
-    dict_add_nr_str(dict, "col", (long)curwin->w_cursor.col, NULL);
+    dict_add_number(dict, "lnum", (long)curwin->w_cursor.lnum);
+    dict_add_number(dict, "col", (long)curwin->w_cursor.col);
 #ifdef FEAT_VIRTUALEDIT
-    dict_add_nr_str(dict, "coladd", (long)curwin->w_cursor.coladd, NULL);
+    dict_add_number(dict, "coladd", (long)curwin->w_cursor.coladd);
 #endif
     update_curswant();
-    dict_add_nr_str(dict, "curswant", (long)curwin->w_curswant, NULL);
+    dict_add_number(dict, "curswant", (long)curwin->w_curswant);
 
-    dict_add_nr_str(dict, "topline", (long)curwin->w_topline, NULL);
+    dict_add_number(dict, "topline", (long)curwin->w_topline);
 #ifdef FEAT_DIFF
-    dict_add_nr_str(dict, "topfill", (long)curwin->w_topfill, NULL);
+    dict_add_number(dict, "topfill", (long)curwin->w_topfill);
 #endif
-    dict_add_nr_str(dict, "leftcol", (long)curwin->w_leftcol, NULL);
-    dict_add_nr_str(dict, "skipcol", (long)curwin->w_skipcol, NULL);
+    dict_add_number(dict, "leftcol", (long)curwin->w_leftcol);
+    dict_add_number(dict, "skipcol", (long)curwin->w_skipcol);
 }
 
 /*
