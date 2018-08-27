@@ -799,11 +799,9 @@ codepage_invalid:
 	fix_arg_enc();
 #endif
 
-#ifdef FEAT_AUTOCMD
     /* Fire an autocommand to let people do custom font setup. This must be
      * after Vim has been setup for the new encoding. */
     apply_autocmds(EVENT_ENCODINGCHANGED, NULL, (char_u *)"", FALSE, curbuf);
-#endif
 
 #ifdef FEAT_SPELL
     /* Need to reload spell dictionaries */
@@ -2260,7 +2258,6 @@ utf_char2len(int c)
 /*
  * Convert Unicode character "c" to UTF-8 string in "buf[]".
  * Returns the number of bytes.
- * This does not include composing characters.
  */
     int
 utf_char2bytes(int c, char_u *buf)
@@ -4793,16 +4790,16 @@ iconv_end(void)
 # define USE_IMSTATUSFUNC (*p_imsf != NUL)
 #endif
 
-#if defined(FEAT_EVAL) && defined(FEAT_MBYTE)
+#if defined(FEAT_EVAL) && defined(FEAT_MBYTE) \
+	&& (defined(FEAT_XIM) || defined(IME_WITHOUT_XIM))
     static void
 call_imactivatefunc(int active)
 {
-    char_u *argv[1];
+    typval_T argv[2];
 
-    if (active)
-	argv[0] = (char_u *)"1";
-    else
-	argv[0] = (char_u *)"0";
+    argv[0].v_type = VAR_NUMBER;
+    argv[0].vval.v_number = active ? 1 : 0;
+    argv[1].v_type = VAR_UNKNOWN;
     (void)call_func_retnr(p_imaf, 1, argv, FALSE);
 }
 
@@ -4812,11 +4809,7 @@ call_imstatusfunc(void)
     int is_active;
 
     /* FIXME: Don't execute user function in unsafe situation. */
-    if (exiting
-#   ifdef FEAT_AUTOCMD
-	    || is_autocmd_blocked()
-#   endif
-	    )
+    if (exiting || is_autocmd_blocked())
 	return FALSE;
     /* FIXME: :py print 'xxx' is shown duplicate result.
      * Use silent to avoid it. */
@@ -5046,11 +5039,11 @@ im_preedit_window_open()
 #else
     gtk_widget_modify_font(preedit_label, gui.norm_font);
 
-    vim_snprintf(buf, sizeof(buf), "#%06X", gui.norm_pixel);
+    vim_snprintf(buf, sizeof(buf), "#%06X", (unsigned)gui.norm_pixel);
     gdk_color_parse(buf, &color);
     gtk_widget_modify_fg(preedit_label, GTK_STATE_NORMAL, &color);
 
-    vim_snprintf(buf, sizeof(buf), "#%06X", gui.back_pixel);
+    vim_snprintf(buf, sizeof(buf), "#%06X", (unsigned)gui.back_pixel);
     gdk_color_parse(buf, &color);
     gtk_widget_modify_bg(preedit_window, GTK_STATE_NORMAL, &color);
 #endif
@@ -5699,11 +5692,11 @@ im_synthesize_keypress(unsigned int keyval, unsigned int state)
     void
 xim_reset(void)
 {
-#ifdef FEAT_EVAL
+# ifdef FEAT_EVAL
     if (USE_IMACTIVATEFUNC)
 	call_imactivatefunc(im_is_active);
     else
-#endif
+# endif
     if (xic != NULL)
     {
 	gtk_im_context_reset(xic);
@@ -6483,11 +6476,11 @@ xim_get_status_area_height(void)
 
 #else /* !defined(FEAT_XIM) */
 
-# if !defined(FEAT_GUI_W32) || !(defined(FEAT_MBYTE_IME) || defined(GLOBAL_IME))
+# ifdef IME_WITHOUT_XIM
 static int im_was_set_active = FALSE;
 
     int
-im_get_status()
+im_get_status(void)
 {
 #  if defined(FEAT_MBYTE) && defined(FEAT_EVAL)
     if (USE_IMSTATUSFUNC)
@@ -6512,7 +6505,7 @@ im_set_active(int active_arg)
 
 #  ifdef FEAT_GUI
     void
-im_set_position(int row, int col)
+im_set_position(int row UNUSED, int col UNUSED)
 {
 }
 #  endif

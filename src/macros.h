@@ -230,9 +230,9 @@
 #endif
 
 #ifdef STARTUPTIME
-# define TIME_MSG(s) { if (time_fd != NULL) time_msg(s, NULL); }
+# define TIME_MSG(s) do { if (time_fd != NULL) time_msg(s, NULL); } while (0)
 #else
-# define TIME_MSG(s)
+# define TIME_MSG(s) do { /**/ } while (0)
 #endif
 
 #ifdef FEAT_VREPLACE
@@ -289,24 +289,12 @@
 #endif
 
 #ifdef FEAT_AUTOCHDIR
-# define DO_AUTOCHDIR if (p_acd) do_autochdir();
+# define DO_AUTOCHDIR do { if (p_acd) do_autochdir(); } while (0)
 #else
-# define DO_AUTOCHDIR
+# define DO_AUTOCHDIR do { /**/ } while (0)
 #endif
 
-#if defined(FEAT_SCROLLBIND) && defined(FEAT_CURSORBIND)
-# define RESET_BINDING(wp)  (wp)->w_p_scb = FALSE; (wp)->w_p_crb = FALSE
-#else
-# if defined(FEAT_SCROLLBIND)
-#  define RESET_BINDING(wp)  (wp)->w_p_scb = FALSE
-# else
-#  if defined(FEAT_CURSORBIND)
-#   define RESET_BINDING(wp)  (wp)->w_p_crb = FALSE
-#  else
-#   define RESET_BINDING(wp)
-#  endif
-# endif
-#endif
+#define RESET_BINDING(wp)  (wp)->w_p_scb = FALSE; (wp)->w_p_crb = FALSE
 
 #ifdef FEAT_DIFF
 # define PLINES_NOFILL(x) plines_nofill(x)

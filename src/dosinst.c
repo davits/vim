@@ -23,7 +23,14 @@
 #define GVIMEXT32_PATH	    "GvimExt32\\gvimext.dll"
 
 /* Macro to do an error check I was typing over and over */
-#define CHECK_REG_ERROR(code) if (code != ERROR_SUCCESS) { printf("%ld error number:  %ld\n", (long)__LINE__, (long)code); return 1; }
+#define CHECK_REG_ERROR(code) \
+    do { \
+	if (code != ERROR_SUCCESS) \
+	{ \
+	    printf("%ld error number:  %ld\n", (long)__LINE__, (long)code); \
+	    return 1; \
+	} \
+    } while (0)
 
 int	has_vim = 0;		/* installable vim.exe exists */
 int	has_gvim = 0;		/* installable gvim.exe exists */
@@ -1190,18 +1197,22 @@ install_vimrc(int idx)
 	fprintf(fd, "  let opt = '-a --binary '\n");
 	fprintf(fd, "  if &diffopt =~ 'icase' | let opt = opt . '-i ' | endif\n");
 	fprintf(fd, "  if &diffopt =~ 'iwhite' | let opt = opt . '-b ' | endif\n");
-	/* Use quotes only when needed, they may cause trouble. */
+	/* Use quotes only when needed, they may cause trouble.
+	 * Always escape "!". */
 	fprintf(fd, "  let arg1 = v:fname_in\n");
 	fprintf(fd, "  if arg1 =~ ' ' | let arg1 = '\"' . arg1 . '\"' | endif\n");
+	fprintf(fd, "  let arg1 = substitute(arg1, '!', '\\!', 'g')\n");
 	fprintf(fd, "  let arg2 = v:fname_new\n");
 	fprintf(fd, "  if arg2 =~ ' ' | let arg2 = '\"' . arg2 . '\"' | endif\n");
+	fprintf(fd, "  let arg2 = substitute(arg2, '!', '\\!', 'g')\n");
 	fprintf(fd, "  let arg3 = v:fname_out\n");
 	fprintf(fd, "  if arg3 =~ ' ' | let arg3 = '\"' . arg3 . '\"' | endif\n");
+	fprintf(fd, "  let arg3 = substitute(arg3, '!', '\\!', 'g')\n");
 
 	/* If the path has a space:  When using cmd.exe (Win NT/2000/XP) put
 	 * quotes around the diff command and rely on the default value of
-         * shellxquote to solve the quoting problem for the whole command.
-         *
+	 * shellxquote to solve the quoting problem for the whole command.
+	 *
 	 * Otherwise put a double quote just before the space and at the
 	 * end of the command.  Putting quotes around the whole thing
 	 * doesn't work on Win 95/98/ME.  This is mostly guessed! */
@@ -1218,6 +1229,7 @@ install_vimrc(int idx)
 	fprintf(fd, "  else\n");
 	fprintf(fd, "    let cmd = $VIMRUNTIME . '\\diff'\n");
 	fprintf(fd, "  endif\n");
+	fprintf(fd, "  let cmd = substitute(cmd, '!', '\\!', 'g')\n");
 	fprintf(fd, "  silent execute '!' . cmd . ' ' . opt . arg1 . ' ' . arg2 . ' > ' . arg3\n");
 	fprintf(fd, "  if exists('l:shxq_sav')\n");
 	fprintf(fd, "    let &shellxquote=l:shxq_sav\n");

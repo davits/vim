@@ -516,7 +516,6 @@ CancelRedo(void)
     }
 }
 
-#if defined(FEAT_AUTOCMD) || defined(FEAT_EVAL) || defined(PROTO)
 /*
  * Save redobuff and old_redobuff to save_redobuff and save_old_redobuff.
  * Used before executing autocommands and user functions.
@@ -552,7 +551,6 @@ restoreRedobuff(save_redo_T *save_redo)
     free_buff(&old_redobuff);
     old_redobuff = save_redo->sr_old_redobuff;
 }
-#endif
 
 /*
  * Append "s" to the redo buffer.
@@ -846,6 +844,14 @@ start_redo(long count, int old_redo)
 	if (c >= '1' && c < '9')
 	    ++c;
 	add_char_buff(&readbuf2, c);
+
+	/* the expression register should be re-evaluated */
+	if (c == '=')
+	{
+	    add_char_buff(&readbuf2, CAR);
+	    cmd_silent = TRUE;
+	}
+
 	c = read_redo(FALSE, old_redo);
     }
 
@@ -1246,7 +1252,7 @@ gotchars(char_u *chars, int len)
     int		todo = len;
 
     /* remember how many chars were last recorded */
-    if (Recording)
+    if (reg_recording != 0)
 	last_recorded_len += len;
 
     buf[1] = NUL;
@@ -1256,7 +1262,7 @@ gotchars(char_u *chars, int len)
 	c = *s++;
 	updatescript(c);
 
-	if (Recording)
+	if (reg_recording != 0)
 	{
 	    buf[0] = c;
 	    add_buff(&recordbuff, buf, 1L);
@@ -1854,7 +1860,7 @@ vpeekc(void)
     return vgetorpeek(FALSE);
 }
 
-#if defined(FEAT_TERMRESPONSE) || defined(PROTO)
+#if defined(FEAT_TERMRESPONSE) || defined(FEAT_TERMINAL) || defined(PROTO)
 /*
  * Like vpeekc(), but don't allow mapping.  Do allow checking for terminal
  * codes.
@@ -2009,7 +2015,7 @@ vgetorpeek(int advance)
     init_typebuf();
     start_stuff();
     if (advance && typebuf.tb_maplen == 0)
-	Exec_reg = FALSE;
+	reg_executing = 0;
     do
     {
 /*
@@ -2061,7 +2067,7 @@ vgetorpeek(int advance)
 		    c = inchar(typebuf.tb_buf, typebuf.tb_buflen - 1, 0L);
 		    /*
 		     * If inchar() returns TRUE (script file was active) or we
-		     * are inside a mapping, get out of insert mode.
+		     * are inside a mapping, get out of Insert mode.
 		     * Otherwise we behave like having gotten a CTRL-C.
 		     * As a result typing CTRL-C in insert mode will
 		     * really insert a CTRL-C.
@@ -2757,6 +2763,10 @@ vgetorpeek(int advance)
 		     * cmdline window. */
 		    if (p_im && (State & INSERT))
 			c = Ctrl_L;
+#ifdef FEAT_TERMINAL
+		    else if (terminal_is_active())
+			c = K_CANCEL;
+#endif
 		    else if ((State & CMDLINE)
 #ifdef FEAT_CMDWIN
 			    || (cmdwin_type > 0 && tc == ESC)
@@ -2846,6 +2856,11 @@ vgetorpeek(int advance)
 /*
  * get a character: 3. from the user - get it
  */
+		if (typebuf.tb_len == 0)
+		    // timedout may have been set while waiting for a mapping
+		    // that has a <Nop> RHS.
+		    timedout = FALSE;
+
 		wait_tb_len = typebuf.tb_len;
 		c = inchar(typebuf.tb_buf + typebuf.tb_off + typebuf.tb_len,
 			typebuf.tb_buflen - typebuf.tb_off - typebuf.tb_len - 1,
@@ -2891,7 +2906,7 @@ vgetorpeek(int advance)
 						     + typebuf.tb_len] != NUL)
 			typebuf.tb_noremap[typebuf.tb_off
 						 + typebuf.tb_len++] = RM_YES;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 		    /* Get IM status right after getting keys, not after the
 		     * timeout for a mapping (focus may be lost by then). */
 		    vgetc_im_active = im_get_status();
@@ -2900,8 +2915,8 @@ vgetorpeek(int advance)
 	    }	    /* for (;;) */
 	}	/* if (!character from stuffbuf) */
 
-			/* if advance is FALSE don't loop on NULs */
-    } while (c < 0 || (advance && c == NUL));
+	/* if advance is FALSE don't loop on NULs */
+    } while ((c < 0 && c != K_CANCEL) || (advance && c == NUL));
 
     /*
      * The "INSERT" message is taken care of here:
@@ -3122,10 +3137,8 @@ fix_input_buffer(char_u *buf, int len)
 	else
 #endif
 	if (p[0] == NUL || (p[0] == K_SPECIAL
-#ifdef FEAT_AUTOCMD
 		    /* timeout may generate K_CURSORHOLD */
 		    && (i < 2 || p[1] != KS_EXTRA || p[2] != (int)KE_CURSORHOLD)
-#endif
 #if defined(WIN3264) && !defined(FEAT_GUI)
 		    /* Win32 console passes modifiers */
 		    && (i < 2 || p[1] != KS_MODIFIER)
@@ -4123,7 +4136,7 @@ map_to_exists_mode(char_u *rhs, int mode, int abbr)
     mapblock_T	*mp;
     int		hash;
 # ifdef FEAT_LOCALMAP
-    int		expand_buffer = FALSE;
+    int		exp_buffer = FALSE;
 
     validate_maphash();
 
@@ -4138,14 +4151,14 @@ map_to_exists_mode(char_u *rhs, int mode, int abbr)
 		if (hash > 0)		/* there is only one abbr list */
 		    break;
 #ifdef FEAT_LOCALMAP
-		if (expand_buffer)
+		if (exp_buffer)
 		    mp = curbuf->b_first_abbr;
 		else
 #endif
 		    mp = first_abbr;
 	    }
 # ifdef FEAT_LOCALMAP
-	    else if (expand_buffer)
+	    else if (exp_buffer)
 		mp = curbuf->b_maphash[hash];
 # endif
 	    else
@@ -4158,9 +4171,9 @@ map_to_exists_mode(char_u *rhs, int mode, int abbr)
 	    }
 	}
 # ifdef FEAT_LOCALMAP
-	if (expand_buffer)
+	if (exp_buffer)
 	    break;
-	expand_buffer = TRUE;
+	exp_buffer = TRUE;
     }
 # endif
 
@@ -4399,7 +4412,9 @@ ExpandMappings(
 
 /*
  * Check for an abbreviation.
- * Cursor is at ptr[col]. When inserting, mincol is where insert started.
+ * Cursor is at ptr[col].
+ * When inserting, mincol is where insert started.
+ * For the command line, mincol is what is to be skipped over.
  * "c" is the character typed before check_abbr was called.  It may have
  * ABBR_OFF added to avoid prepending a CTRL-V to it.
  *
@@ -4523,10 +4538,12 @@ check_abbr(
 
 	    if (vim_strbyte(mp->m_keys, K_SPECIAL) != NULL)
 	    {
+		char_u *qe = vim_strsave(mp->m_keys);
+
 		/* might have CSI escaped mp->m_keys */
-		q = vim_strsave(mp->m_keys);
-		if (q != NULL)
+		if (qe != NULL)
 		{
+		    q = qe;
 		    vim_unescape_csi(q);
 		    qlen = (int)STRLEN(q);
 		}

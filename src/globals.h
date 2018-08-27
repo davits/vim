@@ -371,6 +371,11 @@ EXTERN int	highlight_stltermnc[9];		/* On top of user */
 #  endif
 # endif
 #endif
+#ifdef FEAT_TERMINAL
+		// When TRUE skip calling terminal_loop() once.  Used when
+		// typing ':' at the more prompt.
+EXTERN int	skip_term_loop INIT(= FALSE);
+#endif
 #ifdef FEAT_GUI
 EXTERN char_u	*use_gvimrc INIT(= NULL);	/* "-U" cmdline argument */
 #endif
@@ -385,7 +390,6 @@ EXTERN guicolor_T cterm_normal_bg_gui_color INIT(= INVALCOLOR);
 EXTERN int	is_mac_terminal INIT(= FALSE);  /* recognized Terminal.app */
 #endif
 
-#ifdef FEAT_AUTOCMD
 EXTERN int	autocmd_busy INIT(= FALSE);	/* Is apply_autocmds() busy? */
 EXTERN int	autocmd_no_enter INIT(= FALSE); /* *Enter autocmds disabled */
 EXTERN int	autocmd_no_leave INIT(= FALSE); /* *Leave autocmds disabled */
@@ -405,7 +409,6 @@ EXTERN bufref_T	au_new_curbuf INIT(= {NULL COMMA 0 COMMA 0});
  * Free the buffer/window when autocmd_busy is being set to FALSE. */
 EXTERN buf_T	*au_pending_free_buf INIT(= NULL);
 EXTERN win_T	*au_pending_free_win INIT(= NULL);
-#endif
 
 #ifdef FEAT_MOUSE
 /*
@@ -572,10 +575,8 @@ EXTERN win_T	*prevwin INIT(= NULL);	/* previous window */
 
 EXTERN win_T	*curwin;	/* currently active window */
 
-#ifdef FEAT_AUTOCMD
 EXTERN win_T	*aucmd_win;	/* window used in aucmd_prepbuf() */
 EXTERN int	aucmd_win_used INIT(= FALSE);	/* aucmd_win is being used */
-#endif
 
 /*
  * The window layout is kept in a tree of frames.  topframe points to the top
@@ -639,6 +640,7 @@ EXTERN int	exiting INIT(= FALSE);
 EXTERN int	really_exiting INIT(= FALSE);
 				/* TRUE when we are sure to exit, e.g., after
 				 * a deadly signal */
+EXTERN int	v_dying INIT(= 0); /* internal value of v:dying */
 EXTERN int	stdout_isatty INIT(= TRUE);	/* is stdout a terminal? */
 
 #if defined(FEAT_AUTOCHDIR)
@@ -664,7 +666,6 @@ EXTERN int	textlock INIT(= 0);
 				/* non-zero when changing text and jumping to
 				 * another window or buffer is not allowed */
 
-#ifdef FEAT_AUTOCMD
 EXTERN int	curbuf_lock INIT(= 0);
 				/* non-zero when the current buffer can't be
 				 * changed.  Used for FileChangedRO. */
@@ -673,7 +674,6 @@ EXTERN int	allbuf_lock INIT(= 0);
 				 * changed, no buffer can be deleted and
 				 * current directory can't be changed.
 				 * Used for SwapExists et al. */
-#endif
 #ifdef FEAT_EVAL
 # define HAVE_SANDBOX
 EXTERN int	sandbox INIT(= 0);
@@ -733,7 +733,6 @@ EXTERN colnr_T	ai_col INIT(= 0);
 EXTERN int     end_comment_pending INIT(= NUL);
 #endif
 
-#ifdef FEAT_SCROLLBIND
 /*
  * This flag is set after a ":syncbind" to let the check_scrollbind() function
  * know that it should not attempt to perform scrollbinding due to the scroll
@@ -741,7 +740,6 @@ EXTERN int     end_comment_pending INIT(= NUL);
  * undo some of the work done by ":syncbind.")  -ralston
  */
 EXTERN int     did_syncbind INIT(= FALSE);
-#endif
 
 #ifdef FEAT_SMARTINDENT
 /*
@@ -940,8 +938,8 @@ EXTERN long	opcount INIT(= 0);	/* count for pending operator */
 EXTERN int exmode_active INIT(= 0);	/* zero, EXMODE_NORMAL or EXMODE_VIM */
 EXTERN int ex_no_reprint INIT(= FALSE); /* no need to print after z or p */
 
-EXTERN int Recording INIT(= FALSE);	/* TRUE when recording into a reg. */
-EXTERN int Exec_reg INIT(= FALSE);	/* TRUE when executing a register */
+EXTERN int reg_recording INIT(= 0);	/* register for recording  or zero */
+EXTERN int reg_executing INIT(= 0);	/* register being executed or zero */
 
 EXTERN int no_mapping INIT(= FALSE);	/* currently no mapping allowed */
 EXTERN int no_zero_mapping INIT(= 0);	/* mapping zero not allowed */
@@ -986,15 +984,12 @@ EXTERN int	emsg_silent INIT(= 0);	/* don't print error messages */
 EXTERN int	emsg_noredir INIT(= 0);	/* don't redirect error messages */
 EXTERN int	cmd_silent INIT(= FALSE); /* don't echo the command line */
 
-#if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG) \
-	|| defined(FEAT_AUTOCMD)
 # define HAS_SWAP_EXISTS_ACTION
 EXTERN int	swap_exists_action INIT(= SEA_NONE);
 					/* For dialog when swap file already
 					 * exists. */
 EXTERN int	swap_exists_did_quit INIT(= FALSE);
 					/* Selected "quit" at the dialog. */
-#endif
 
 EXTERN char_u	*IObuff;		/* sprintf's are done in this buffer,
 					   size is IOSIZE */
@@ -1022,7 +1017,7 @@ EXTERN int	stop_insert_mode;	/* for ":stopinsert" and 'insertmode' */
 
 EXTERN int	KeyTyped;		/* TRUE if user typed current char */
 EXTERN int	KeyStuffed;		/* TRUE if current char from stuffbuf */
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 EXTERN int	vgetc_im_active;	/* Input Method was active for last
 					   character obtained from vgetc() */
 #endif
@@ -1075,7 +1070,6 @@ EXTERN char_u	*repeat_cmdline INIT(= NULL); /* command line for "." */
 #ifdef FEAT_CMDHIST
 EXTERN char_u	*new_last_cmdline INIT(= NULL);	/* new value for last_cmdline */
 #endif
-#ifdef FEAT_AUTOCMD
 EXTERN char_u	*autocmd_fname INIT(= NULL); /* fname for <afile> on cmdline */
 EXTERN int	autocmd_fname_full;	     /* autocmd_fname is full path */
 EXTERN int	autocmd_bufnr INIT(= 0);     /* fnum for <abuf> on cmdline */
@@ -1086,7 +1080,6 @@ EXTERN pos_T	last_cursormoved	      /* for CursorMoved event */
 			= INIT_POS_T(0, 0, 0)
 # endif
 			;
-#endif
 
 EXTERN int	postponed_split INIT(= 0);  /* for CTRL-W CTRL-] command */
 EXTERN int	postponed_split_flags INIT(= 0);  /* args for win_split() */
@@ -1138,12 +1131,12 @@ EXTERN char_u	tolower_tab[256];	/* table for tolower() */
 EXTERN char	breakat_flags[256];	/* which characters are in 'breakat' */
 #endif
 
-/* these are in version.c */
+/* These are in version.c, call init_longVersion() before use. */
 extern char *Version;
 #if defined(HAVE_DATE_TIME) && defined(VMS) && defined(VAXC)
 extern char longVersion[];
 #else
-extern char *longVersion;
+EXTERN char *longVersion;
 #endif
 
 /*
@@ -1595,9 +1588,7 @@ EXTERN char_u e_notset[]	INIT(= N_("E764: Option '%s' is not set"));
 EXTERN char_u e_invalidreg[]    INIT(= N_("E850: Invalid register name"));
 #endif
 EXTERN char_u e_dirnotf[]	INIT(= N_("E919: Directory not found in '%s': \"%s\""));
-#ifdef FEAT_AUTOCMD
 EXTERN char_u e_au_recursive[]	INIT(= N_("E952: Autocommand caused recursive behavior"));
-#endif
 
 #ifdef FEAT_GUI_MAC
 EXTERN short disallow_gui	INIT(= FALSE);
@@ -1643,6 +1634,7 @@ EXTERN int  alloc_fail_repeat INIT(= 0);
 /* flags set by test_override() */
 EXTERN int  disable_char_avail_for_testing INIT(= 0);
 EXTERN int  disable_redraw_for_testing INIT(= 0);
+EXTERN int  nfa_fail_for_testing INIT(= 0);
 
 EXTERN int  in_free_unref_items INIT(= FALSE);
 #endif

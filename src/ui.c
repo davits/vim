@@ -415,7 +415,10 @@ ui_breakcheck_force(int force)
 #endif
 	mch_breakcheck(force);
 
-    updating_screen = save_us;
+    if (save_us)
+	updating_screen = save_us;
+    else
+	reset_updating_screen(FALSE);
 }
 
 /*****************************************************************************
@@ -1854,18 +1857,15 @@ fill_input_buf(int exit_on_error UNUSED)
     len = 0;	/* to avoid gcc warning */
     for (try = 0; try < 100; ++try)
     {
-#  ifdef VMS
-	len = vms_read(
-#  else
-	len = read(read_cmd_fd,
-#  endif
-	    (char *)inbuf + inbufcount, (size_t)((INBUFLEN - inbufcount)
+	size_t readlen = (size_t)((INBUFLEN - inbufcount)
 #  ifdef FEAT_MBYTE
-		/ input_conv.vc_factor
+			    / input_conv.vc_factor
 #  endif
-		));
-#  if 0
-		)	/* avoid syntax highlight error */
+			    );
+#  ifdef VMS
+	len = vms_read((char *)inbuf + inbufcount, readlen);
+#  else
+	len = read(read_cmd_fd, (char *)inbuf + inbufcount, readlen);
 #  endif
 
 	if (len > 0 || got_int)
@@ -1974,7 +1974,7 @@ ui_cursor_shape_forced(int forced)
 # endif
 
 # ifdef FEAT_CONCEAL
-    conceal_check_cursur_line();
+    conceal_check_cursor_line();
 # endif
 }
 
@@ -2827,11 +2827,18 @@ retnomove:
 	 * (MOUSE_FOCUS was set above if we dragged first). */
 	if (dragwin == NULL || (flags & MOUSE_RELEASED))
 	    win_enter(wp, TRUE);		/* can make wp invalid! */
-#ifdef CHECK_DOUBLE_CLICK
-	/* set topline, to be able to check for double click ourselves */
+
 	if (curwin != old_curwin)
+	{
+#ifdef CHECK_DOUBLE_CLICK
+	    /* set topline, to be able to check for double click ourselves */
 	    set_mouse_topline(curwin);
 #endif
+#ifdef FEAT_TERMINAL
+	    /* when entering a terminal window may change state */
+	    term_win_entered();
+#endif
+	}
 	if (on_status_line)			/* In (or below) status line */
 	{
 	    /* Don't use start_arrow() if we're in the same window */
@@ -3199,7 +3206,8 @@ mouse_find_win(int *rowp, int *colp UNUSED)
 
 #if defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_GTK) || defined(FEAT_GUI_MAC) \
 	|| defined(FEAT_GUI_ATHENA) || defined(FEAT_GUI_MSWIN) \
-	|| defined(FEAT_GUI_PHOTON) || defined(PROTO)
+	|| defined(FEAT_GUI_PHOTON) || defined(FEAT_TERM_POPUP_MENU) \
+	|| defined(PROTO)
 /*
  * Translate window coordinates to buffer position without any side effects
  */
@@ -3245,7 +3253,8 @@ get_fpos_of_mouse(pos_T *mpos)
 
 #if defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_GTK) || defined(FEAT_GUI_MAC) \
 	|| defined(FEAT_GUI_ATHENA) || defined(FEAT_GUI_MSWIN) \
-	|| defined(FEAT_GUI_PHOTON) || defined(FEAT_BEVAL) || defined(PROTO)
+	|| defined(FEAT_GUI_PHOTON) || defined(FEAT_BEVAL) \
+	|| defined(FEAT_TERM_POPUP_MENU) || defined(PROTO)
 /*
  * Convert a virtual (screen) column to a character column.
  * The first column is one.
@@ -3297,13 +3306,11 @@ ui_focus_change(
 	last_time = time(NULL);
     }
 
-#ifdef FEAT_AUTOCMD
     /*
      * Fire the focus gained/lost autocommand.
      */
     need_redraw |= apply_autocmds(in_focus ? EVENT_FOCUSGAINED
 				: EVENT_FOCUSLOST, NULL, NULL, FALSE, curbuf);
-#endif
 
     if (need_redraw)
     {
@@ -3337,7 +3344,7 @@ ui_focus_change(
 }
 #endif
 
-#if defined(FEAT_MBYTE) || defined(PROTO)
+#if defined(HAVE_INPUT_METHOD) || defined(PROTO)
 /*
  * Save current Input Method status to specified place.
  */

@@ -1017,7 +1017,7 @@ do_tag(
 		}
 	    }
 
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 	    /* Let the SwapExists event know what tag we are jumping to. */
 	    vim_snprintf((char *)IObuff, IOSIZE, ":ta %s\r", name);
 	    set_vim_var_string(VV_SWAPCOMMAND, IObuff, -1);
@@ -1028,7 +1028,7 @@ do_tag(
 	     */
 	    i = jumpto_tag(matches[cur_match], forceit, type != DT_CSCOPE);
 
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 	    set_vim_var_string(VV_SWAPCOMMAND, NULL, -1);
 #endif
 
@@ -3174,11 +3174,7 @@ jumpto_tag(
      * file.  Also accept a file name for which there is a matching BufReadCmd
      * autocommand event (e.g., http://sys/file).
      */
-    if (mch_getperm(fname) < 0
-#ifdef FEAT_AUTOCMD
-	    && !has_autocmd(EVENT_BUFREADCMD, fname, NULL)
-#endif
-       )
+    if (mch_getperm(fname) < 0 && !has_autocmd(EVENT_BUFREADCMD, fname, NULL))
     {
 	retval = NOTAGFILE;
 	vim_free(nofile_fname);
@@ -3413,9 +3409,7 @@ jumpto_tag(
 #ifdef FEAT_SEARCH_EXTRA
 	/* restore no_hlsearch when keeping the old search pattern */
 	if (search_options)
-	{
-	    SET_NO_HLSEARCH(save_no_hlsearch);
-	}
+	    set_no_hlsearch(save_no_hlsearch);
 #endif
 
 	/* Return OK if jumped to another file (at least we found the file!). */

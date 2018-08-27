@@ -1206,7 +1206,7 @@ profile_zero(proftime_T *tm)
 static timer_T	*first_timer = NULL;
 static long	last_timer_id = 0;
 
-    static long
+    long
 proftime_time_left(proftime_T *due, proftime_T *now)
 {
 #  ifdef WIN3264
@@ -1336,6 +1336,8 @@ check_due_timer(void)
 	this_due = proftime_time_left(&timer->tr_due, &now);
 	if (this_due <= 1)
 	{
+	    /* Save and restore a lot of flags, because the timer fires while
+	     * waiting for a character, which might be halfway a command. */
 	    int save_timer_busy = timer_busy;
 	    int save_vgetc_busy = vgetc_busy;
 	    int save_did_emsg = did_emsg;
@@ -1345,6 +1347,7 @@ check_due_timer(void)
 	    int save_did_throw = did_throw;
 	    int save_ex_pressedreturn = get_pressedreturn();
 	    except_T *save_current_exception = current_exception;
+	    vimvars_save_T vvsave;
 
 	    /* Create a scope for running the timer callback, ignoring most of
 	     * the current scope, such as being inside a try/catch. */
@@ -1357,6 +1360,7 @@ check_due_timer(void)
 	    trylevel = 0;
 	    did_throw = FALSE;
 	    current_exception = NULL;
+	    save_vimvars(&vvsave);
 
 	    timer->tr_firing = TRUE;
 	    timer_callback(timer);
@@ -1373,6 +1377,7 @@ check_due_timer(void)
 	    trylevel = save_trylevel;
 	    did_throw = save_did_throw;
 	    current_exception = save_current_exception;
+	    restore_vimvars(&vvsave);
 	    if (must_redraw != 0)
 		need_update_screen = TRUE;
 	    must_redraw = must_redraw > save_must_redraw
@@ -1420,9 +1425,13 @@ check_due_timer(void)
 	    if (balloonEval != NULL)
 		general_beval_cb(balloonEval, 0);
 	}
-	else if (this_due > 0 && (next_due == -1 || next_due > this_due))
+	else if (next_due == -1 || next_due > this_due)
 	    next_due = this_due;
     }
+#endif
+#ifdef FEAT_TERMINAL
+    /* Some terminal windows may need their buffer updated. */
+    next_due = term_check_timers(next_due, &now);
 #endif
 
     return current_id != last_timer_id ? 1 : next_due;
@@ -2045,17 +2054,15 @@ autowrite_all(void)
     FOR_ALL_BUFFERS(buf)
 	if (bufIsChanged(buf) && !buf->b_p_ro)
 	{
-#ifdef FEAT_AUTOCMD
 	    bufref_T	bufref;
 
 	    set_bufref(&bufref, buf);
-#endif
+
 	    (void)buf_write_all(buf, FALSE);
-#ifdef FEAT_AUTOCMD
+
 	    /* an autocommand may have deleted the buffer */
 	    if (!bufref_valid(&bufref))
 		buf = firstbuf;
-#endif
 	}
 }
 
@@ -2067,11 +2074,9 @@ autowrite_all(void)
 check_changed(buf_T *buf, int flags)
 {
     int		forceit = (flags & CCGD_FORCEIT);
-#ifdef FEAT_AUTOCMD
     bufref_T	bufref;
 
     set_bufref(&bufref, buf);
-#endif
 
     if (       !forceit
 	    && bufIsChanged(buf)
@@ -2093,24 +2098,22 @@ check_changed(buf_T *buf, int flags)
 # endif
 					))
 			++count;
-# ifdef FEAT_AUTOCMD
 	    if (!bufref_valid(&bufref))
 		/* Autocommand deleted buffer, oops!  It's not changed now. */
 		return FALSE;
-# endif
+
 	    dialog_changed(buf, count > 1);
-# ifdef FEAT_AUTOCMD
+
 	    if (!bufref_valid(&bufref))
 		/* Autocommand deleted buffer, oops!  It's not changed now. */
 		return FALSE;
-# endif
 	    return bufIsChanged(buf);
 	}
 #endif
 	if (flags & CCGD_EXCMD)
 	    no_write_message();
 	else
-	    no_write_message_nobang();
+	    no_write_message_nobang(curbuf);
 	return TRUE;
     }
     return FALSE;
@@ -2197,11 +2200,9 @@ dialog_changed(
 			)
 		    && !buf2->b_p_ro)
 	    {
-#ifdef FEAT_AUTOCMD
 		bufref_T bufref;
 
 		set_bufref(&bufref, buf2);
-#endif
 #ifdef FEAT_BROWSE
 		/* May get file name, when there is none */
 		browse_save_fname(buf2);
@@ -2210,11 +2211,10 @@ dialog_changed(
 				  buf2->b_fname, buf2->b_ffname, FALSE) == OK)
 		    /* didn't hit Cancel */
 		    (void)buf_write_all(buf2, FALSE);
-#ifdef FEAT_AUTOCMD
+
 		/* an autocommand may have deleted the buffer */
 		if (!bufref_valid(&bufref))
 		    buf2 = firstbuf;
-#endif
 	    }
 	}
     }
@@ -2263,7 +2263,7 @@ add_bufnum(int *bufnrs, int *bufnump, int nr)
 /*
  * Return TRUE if any buffer was changed and cannot be abandoned.
  * That changed buffer becomes the current buffer.
- * When "unload" is true the current buffer is unloaded instead of making it
+ * When "unload" is TRUE the current buffer is unloaded instead of making it
  * hidden.  This is used for ":q!".
  */
     int
@@ -2281,6 +2281,7 @@ check_changed_any(
     tabpage_T   *tp;
     win_T	*wp;
 
+    /* Make a list of all buffers, with the most important ones first. */
     FOR_ALL_BUFFERS(buf)
 	++bufcount;
 
@@ -2293,17 +2294,19 @@ check_changed_any(
 
     /* curbuf */
     bufnrs[bufnum++] = curbuf->b_fnum;
-    /* buf in curtab */
+
+    /* buffers in current tab */
     FOR_ALL_WINDOWS(wp)
 	if (wp->w_buffer != curbuf)
 	    add_bufnum(bufnrs, &bufnum, wp->w_buffer->b_fnum);
 
-    /* buf in other tab */
+    /* buffers in other tabs */
     FOR_ALL_TABPAGES(tp)
 	if (tp != curtab)
 	    for (wp = tp->tp_firstwin; wp != NULL; wp = wp->w_next)
 		add_bufnum(bufnrs, &bufnum, wp->w_buffer->b_fnum);
-    /* any other buf */
+
+    /* any other buffer */
     FOR_ALL_BUFFERS(buf)
 	add_bufnum(bufnrs, &bufnum, buf->b_fnum);
 
@@ -2317,6 +2320,14 @@ check_changed_any(
 	    bufref_T bufref;
 
 	    set_bufref(&bufref, buf);
+#ifdef FEAT_TERMINAL
+	    if (term_job_running(buf->b_term))
+	    {
+		if (term_try_stop_job(buf) == FAIL)
+		    break;
+	    }
+	    else
+#endif
 	    /* Try auto-writing the buffer.  If this fails but the buffer no
 	    * longer exists it's not changed, that's OK. */
 	    if (check_changed(buf, (p_awa ? CCGD_AW : 0)
@@ -2329,6 +2340,7 @@ check_changed_any(
     if (i >= bufnum)
 	goto theend;
 
+    /* Get here if "buf" cannot be abandoned. */
     ret = TRUE;
     exiting = FALSE;
 #if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
@@ -2370,19 +2382,15 @@ check_changed_any(
 	FOR_ALL_TAB_WINDOWS(tp, wp)
 	    if (wp->w_buffer == buf)
 	    {
-#ifdef FEAT_AUTOCMD
 		bufref_T bufref;
 
 		set_bufref(&bufref, buf);
-#endif
+
 		goto_tabpage_win(tp, wp);
-#ifdef FEAT_AUTOCMD
+
 		/* Paranoia: did autocms wipe out the buffer with changes? */
 		if (!bufref_valid(&bufref))
-		{
 		    goto theend;
-		}
-#endif
 		goto buf_found;
 	    }
 buf_found:
@@ -2420,20 +2428,16 @@ check_fname(void)
 buf_write_all(buf_T *buf, int forceit)
 {
     int	    retval;
-#ifdef FEAT_AUTOCMD
     buf_T	*old_curbuf = curbuf;
-#endif
 
     retval = (buf_write(buf, buf->b_ffname, buf->b_fname,
 				   (linenr_T)1, buf->b_ml.ml_line_count, NULL,
 						  FALSE, forceit, TRUE, FALSE));
-#ifdef FEAT_AUTOCMD
     if (curbuf != old_curbuf)
     {
 	msg_source(HL_ATTR(HLF_W));
 	MSG(_("Warning: Entered other buffer unexpectedly (check autocommands)"));
     }
-#endif
     return retval;
 }
 
@@ -2445,9 +2449,7 @@ static char_u	*do_one_arg(char_u *str);
 static int	do_arglist(char_u *str, int what, int after);
 static void	alist_check_arg_idx(void);
 static int	editing_arg_idx(win_T *win);
-#ifdef FEAT_LISTCMDS
 static int	alist_add_list(int count, char_u **files, int after);
-#endif
 #define AL_SET	1
 #define AL_ADD	2
 #define AL_DEL	3
@@ -2572,10 +2574,8 @@ do_arglist(
     int		exp_count;
     char_u	**exp_files;
     int		i;
-#ifdef FEAT_LISTCMDS
     char_u	*p;
     int		match;
-#endif
     int		arg_escaped = TRUE;
 
     /*
@@ -2595,7 +2595,6 @@ do_arglist(
     if (get_arglist(&new_ga, str, arg_escaped) == FAIL)
 	return FAIL;
 
-#ifdef FEAT_LISTCMDS
     if (what == AL_DEL)
     {
 	regmatch_T	regmatch;
@@ -2642,7 +2641,6 @@ do_arglist(
 	ga_clear(&new_ga);
     }
     else
-#endif
     {
 	i = expand_wildcards(new_ga.ga_len, (char_u **)new_ga.ga_data,
 		&exp_count, &exp_files, EW_DIR|EW_FILE|EW_ADDSLASH|EW_NOTFOUND);
@@ -2653,14 +2651,12 @@ do_arglist(
 	    return FAIL;
 	}
 
-#ifdef FEAT_LISTCMDS
 	if (what == AL_ADD)
 	{
 	    (void)alist_add_list(exp_count, exp_files, after);
 	    vim_free(exp_files);
 	}
 	else /* what == AL_SET */
-#endif
 	    alist_set(ALIST(curwin), exp_count, exp_files, FALSE, NULL, 0);
     }
 
@@ -2742,16 +2738,11 @@ ex_args(exarg_T *eap)
 
     if (eap->cmdidx != CMD_args)
     {
-#if defined(FEAT_LISTCMDS)
 	alist_unlink(ALIST(curwin));
 	if (eap->cmdidx == CMD_argglobal)
 	    ALIST(curwin) = &global_alist;
 	else /* eap->cmdidx == CMD_arglocal */
 	    alist_new();
-#else
-	ex_ni(eap);
-	return;
-#endif
     }
 
     if (!ends_excmd(*eap->arg))
@@ -2762,31 +2753,28 @@ ex_args(exarg_T *eap)
 	 */
 	ex_next(eap);
     }
-    else
-#if defined(FEAT_LISTCMDS)
-	if (eap->cmdidx == CMD_args)
-#endif
+    else if (eap->cmdidx == CMD_args)
     {
 	/*
 	 * ":args": list arguments.
 	 */
 	if (ARGCOUNT > 0)
 	{
-	    /* Overwrite the command, for a short list there is no scrolling
-	     * required and no wait_return(). */
-	    gotocmdline(TRUE);
-	    for (i = 0; i < ARGCOUNT; ++i)
+	    char_u **items = (char_u **)alloc(sizeof(char_u *) * ARGCOUNT);
+
+	    if (items != NULL)
 	    {
-		if (i == curwin->w_arg_idx)
-		    msg_putchar('[');
-		msg_outtrans(alist_name(&ARGLIST[i]));
-		if (i == curwin->w_arg_idx)
-		    msg_putchar(']');
-		msg_putchar(' ');
+		/* Overwrite the command, for a short list there is no
+		 * scrolling required and no wait_return(). */
+		gotocmdline(TRUE);
+
+		for (i = 0; i < ARGCOUNT; ++i)
+		    items[i] = alist_name(&ARGLIST[i]);
+		list_in_columns(items, ARGCOUNT, curwin->w_arg_idx);
+		vim_free(items);
 	    }
 	}
     }
-#if defined(FEAT_LISTCMDS)
     else if (eap->cmdidx == CMD_arglocal)
     {
 	garray_T	*gap = &curwin->w_alist->al_ga;
@@ -2805,7 +2793,6 @@ ex_args(exarg_T *eap)
 		    ++gap->ga_len;
 		}
     }
-#endif
 }
 
 /*
@@ -2956,7 +2943,6 @@ ex_next(exarg_T *eap)
     }
 }
 
-#if defined(FEAT_LISTCMDS) || defined(PROTO)
 /*
  * ":argedit"
  */
@@ -2964,6 +2950,8 @@ ex_next(exarg_T *eap)
 ex_argedit(exarg_T *eap)
 {
     int i = eap->addr_count ? (int)eap->line2 : curwin->w_arg_idx + 1;
+    // Whether curbuf will be reused, curbuf->b_ffname will be set.
+    int curbuf_is_reusable = curbuf_reusable();
 
     if (do_arglist(eap->arg, AL_ADD, i) == FAIL)
 	return;
@@ -2971,8 +2959,9 @@ ex_argedit(exarg_T *eap)
     maketitle();
 #endif
 
-    if (curwin->w_arg_idx == 0 && (curbuf->b_ml.ml_flags & ML_EMPTY)
-	    && curbuf->b_ffname == NULL)
+    if (curwin->w_arg_idx == 0
+	    && (curbuf->b_ml.ml_flags & ML_EMPTY)
+	    && (curbuf->b_ffname == NULL || curbuf_is_reusable))
 	i = 0;
     /* Edit the argument. */
     if (i < ARGCOUNT)
@@ -3053,7 +3042,7 @@ ex_listdo(exarg_T *eap)
     tabpage_T	*tp;
     buf_T	*buf = curbuf;
     int		next_fnum = 0;
-#if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
+#if defined(FEAT_SYN_HL)
     char_u	*save_ei = NULL;
 #endif
     char_u	*p_shm_save;
@@ -3071,7 +3060,7 @@ ex_listdo(exarg_T *eap)
     }
 #endif
 
-#if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
+#if defined(FEAT_SYN_HL)
     if (eap->cmdidx != CMD_windo && eap->cmdidx != CMD_tabdo)
 	/* Don't do syntax HL autocommands.  Skipping the syntax file is a
 	 * great speed improvement. */
@@ -3249,11 +3238,10 @@ ex_listdo(exarg_T *eap)
 	    if (eap->cmdidx == CMD_windo)
 	    {
 		validate_cursor();	/* cursor may have moved */
-#ifdef FEAT_SCROLLBIND
+
 		/* required when 'scrollbind' has been set */
 		if (curwin->w_p_scb)
 		    do_check_scrollbind(TRUE);
-#endif
 	    }
 
 	    if (eap->cmdidx == CMD_windo || eap->cmdidx == CMD_tabdo)
@@ -3265,7 +3253,7 @@ ex_listdo(exarg_T *eap)
 	listcmd_busy = FALSE;
     }
 
-#if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
+#if defined(FEAT_SYN_HL)
     if (save_ei != NULL)
     {
 	au_event_restore(save_ei);
@@ -3305,7 +3293,8 @@ alist_add_list(
 	for (i = 0; i < count; ++i)
 	{
 	    ARGLIST[after + i].ae_fname = files[i];
-	    ARGLIST[after + i].ae_fnum = buflist_add(files[i], BLN_LISTED);
+	    ARGLIST[after + i].ae_fnum =
+				buflist_add(files[i], BLN_LISTED | BLN_CURBUF);
 	}
 	ALIST(curwin)->al_ga.ga_len += count;
 	if (old_argcount > 0 && curwin->w_arg_idx >= after)
@@ -3318,7 +3307,21 @@ alist_add_list(
     return -1;
 }
 
-#endif /* FEAT_LISTCMDS */
+#if defined(FEAT_CMDL_COMPL) || defined(PROTO)
+/*
+ * Function given to ExpandGeneric() to obtain the possible arguments of the
+ * argedit and argdelete commands.
+ */
+    char_u *
+get_arglist_name(expand_T *xp UNUSED, int idx)
+{
+    if (idx >= ARGCOUNT)
+	return NULL;
+
+    return alist_name(&ARGLIST[idx]);
+}
+#endif
+
 
 #ifdef FEAT_EVAL
 /*
@@ -3660,6 +3663,8 @@ source_in_path(char_u *path, char_u *name, int flags)
 }
 
 
+#if defined(FEAT_EVAL) || defined(PROTO)
+
 /*
  * Expand wildcards in "pat" and invoke do_source() for each match.
  */
@@ -3800,7 +3805,6 @@ load_pack_plugin(char_u *fname)
     vim_snprintf((char *)pat, len, plugpat, ffname);
     source_all_matches(pat);
 
-#ifdef FEAT_AUTOCMD
     {
 	char_u *cmd = vim_strsave((char_u *)"g:did_load_filetypes");
 
@@ -3815,7 +3819,6 @@ load_pack_plugin(char_u *fname)
 	}
 	vim_free(cmd);
     }
-#endif
     vim_free(pat);
     retval = OK;
 
@@ -3832,10 +3835,30 @@ static int APP_BOTH;
     static void
 add_pack_plugin(char_u *fname, void *cookie)
 {
-    if (cookie != &APP_LOAD && strstr((char *)p_rtp, (char *)fname) == NULL)
-	/* directory is not yet in 'runtimepath', add it */
-	if (add_pack_dir_to_rtp(fname) == FAIL)
+    if (cookie != &APP_LOAD)
+    {
+	char_u	*buf = alloc(MAXPATHL);
+	char_u	*p;
+	int	found = FALSE;
+
+	if (buf == NULL)
 	    return;
+	p = p_rtp;
+	while (*p != NUL)
+	{
+	    copy_option_part(&p, buf, MAXPATHL, ",");
+	    if (pathcmp((char *)buf, (char *)fname, -1) == 0)
+	    {
+		found = TRUE;
+		break;
+	    }
+	}
+	vim_free(buf);
+	if (!found)
+	    /* directory is not yet in 'runtimepath', add it */
+	    if (add_pack_dir_to_rtp(fname) == FAIL)
+		return;
+    }
 
     if (cookie != &APP_ADD_DIR)
 	load_pack_plugin(fname);
@@ -3911,8 +3934,9 @@ ex_packadd(exarg_T *eap)
 	vim_free(pat);
     }
 }
+#endif
 
-#if defined(FEAT_EVAL) && defined(FEAT_AUTOCMD)
+#if defined(FEAT_EVAL) || defined(PROTO)
 /*
  * ":options"
  */
@@ -4125,7 +4149,8 @@ ex_source(exarg_T *eap)
 	char_u *fname = NULL;
 
 	fname = do_browse(0, (char_u *)_("Source Vim script"), eap->arg,
-				      NULL, NULL, BROWSE_FILTER_MACROS, NULL);
+				      NULL, NULL,
+				      (char_u *)_(BROWSE_FILTER_MACROS), NULL);
 	if (fname != NULL)
 	{
 	    cmd_source(fname, eap);
@@ -4308,23 +4333,21 @@ do_source(
 	goto theend;
     }
 
-#ifdef FEAT_AUTOCMD
     /* Apply SourceCmd autocommands, they should get the file and source it. */
     if (has_autocmd(EVENT_SOURCECMD, fname_exp, NULL)
 	    && apply_autocmds(EVENT_SOURCECMD, fname_exp, fname_exp,
 							       FALSE, curbuf))
     {
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 	retval = aborting() ? FAIL : OK;
-# else
+#else
 	retval = OK;
-# endif
+#endif
 	goto theend;
     }
 
     /* Apply SourcePre autocommands, they may get the file. */
     apply_autocmds(EVENT_SOURCEPRE, fname_exp, fname_exp, FALSE, curbuf);
-#endif
 
 #ifdef USE_FOPEN_NOINH
     cookie.fp = fopen_noinh_readbin((char *)fname_exp);
@@ -5186,7 +5209,6 @@ source_finished(
 }
 #endif
 
-#if defined(FEAT_LISTCMDS) || defined(PROTO)
 /*
  * ":checktime [buffer]"
  */
@@ -5207,7 +5229,6 @@ ex_checktime(exarg_T *eap)
     }
     no_check_timestamps = save_no_check_timestamps;
 }
-#endif
 
 #if (defined(HAVE_LOCALE_H) || defined(X_LOCALE)) \
 	&& (defined(FEAT_EVAL) || defined(FEAT_MULTI_LANG))

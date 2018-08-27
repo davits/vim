@@ -146,7 +146,6 @@ static void set_search_match(pos_T *t);
 #endif
 
 
-#ifdef FEAT_AUTOCMD
     static void
 trigger_cmd_autocmd(int typechar, int evt)
 {
@@ -156,7 +155,6 @@ trigger_cmd_autocmd(int typechar, int evt)
     typestr[1] = NUL;
     apply_autocmds(evt, typestr, typestr, FALSE, curbuf);
 }
-#endif
 
 /*
  * Abandon the command line.
@@ -186,6 +184,45 @@ empty_pattern(char_u *p)
 			  && vim_strchr((char_u *)"mMvVcCZ", p[n - 1]) != NULL)
 	n -= 2;
     return n == 0 || (n >= 2 && p[n - 2] == '\\' && p[n - 1] == '|');
+}
+#endif
+
+#ifdef FEAT_SEARCH_EXTRA
+typedef struct {
+    colnr_T	vs_curswant;
+    colnr_T	vs_leftcol;
+    linenr_T	vs_topline;
+# ifdef FEAT_DIFF
+    int		vs_topfill;
+# endif
+    linenr_T	vs_botline;
+    linenr_T	vs_empty_rows;
+} viewstate_T;
+
+    static void
+save_viewstate(viewstate_T *vs)
+{
+    vs->vs_curswant = curwin->w_curswant;
+    vs->vs_leftcol = curwin->w_leftcol;
+    vs->vs_topline = curwin->w_topline;
+# ifdef FEAT_DIFF
+    vs->vs_topfill = curwin->w_topfill;
+# endif
+    vs->vs_botline = curwin->w_botline;
+    vs->vs_empty_rows = curwin->w_empty_rows;
+}
+
+    static void
+restore_viewstate(viewstate_T *vs)
+{
+    curwin->w_curswant = vs->vs_curswant;
+    curwin->w_leftcol = vs->vs_leftcol;
+    curwin->w_topline = vs->vs_topline;
+# ifdef FEAT_DIFF
+    curwin->w_topfill = vs->vs_topfill;
+# endif
+    curwin->w_botline = vs->vs_botline;
+    curwin->w_empty_rows = vs->vs_empty_rows;
 }
 #endif
 
@@ -227,20 +264,10 @@ getcmdline(
 #ifdef FEAT_SEARCH_EXTRA
     pos_T	search_start;		/* where 'incsearch' starts searching */
     pos_T       save_cursor;
-    colnr_T	old_curswant;
-    colnr_T     init_curswant = curwin->w_curswant;
-    colnr_T	old_leftcol;
-    colnr_T     init_leftcol = curwin->w_leftcol;
-    linenr_T	old_topline;
-    linenr_T    init_topline = curwin->w_topline;
+    viewstate_T	init_viewstate;
+    viewstate_T	old_viewstate;
     pos_T       match_start = curwin->w_cursor;
     pos_T       match_end;
-# ifdef FEAT_DIFF
-    int		old_topfill;
-    int		init_topfill = curwin->w_topfill;
-# endif
-    linenr_T	old_botline;
-    linenr_T	init_botline = curwin->w_botline;
     int		did_incsearch = FALSE;
     int		incsearch_postponed = FALSE;
 #endif
@@ -266,9 +293,7 @@ getcmdline(
      * custom status line may invoke ":normal". */
     struct cmdline_info save_ccline;
 #endif
-#ifdef FEAT_AUTOCMD
     int		cmdline_type;
-#endif
 
 #ifdef FEAT_EVAL
     if (firstc == -1)
@@ -288,13 +313,8 @@ getcmdline(
     CLEAR_POS(&match_end);
     save_cursor = curwin->w_cursor;	    /* may be restored later */
     search_start = curwin->w_cursor;
-    old_curswant = curwin->w_curswant;
-    old_leftcol = curwin->w_leftcol;
-    old_topline = curwin->w_topline;
-# ifdef FEAT_DIFF
-    old_topfill = curwin->w_topfill;
-# endif
-    old_botline = curwin->w_botline;
+    save_viewstate(&init_viewstate);
+    save_viewstate(&old_viewstate);
 #endif
 
     /*
@@ -376,11 +396,11 @@ getcmdline(
 	    b_im_ptr = &curbuf->b_p_imsearch;
 	if (*b_im_ptr == B_IMODE_LMAP)
 	    State |= LANGMAP;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 	im_set_active(*b_im_ptr == B_IMODE_IM);
 #endif
     }
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
     else if (p_imcmdline)
 	im_set_active(TRUE);
 #endif
@@ -396,11 +416,9 @@ getcmdline(
      * terminal mode set to cooked.  Need to set raw mode here then. */
     settmode(TMODE_RAW);
 
-#ifdef FEAT_AUTOCMD
     /* Trigger CmdlineEnter autocommands. */
     cmdline_type = firstc == NUL ? '-' : firstc;
     trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINEENTER);
-#endif
 
 #ifdef FEAT_CMDHIST
     init_history();
@@ -431,6 +449,10 @@ getcmdline(
 	dont_scroll = FALSE;	/* allow scrolling here */
 #endif
 	quit_more = FALSE;	/* reset after CTRL-D which had a more-prompt */
+
+	did_emsg = FALSE;	/* There can't really be a reason why an error
+				   that occurs while typing a command should
+				   cause the command not to be executed. */
 
 	cursorcmd();		/* set the cursor on the right spot */
 
@@ -1070,13 +1092,7 @@ getcmdline(
 			search_start = save_cursor;
 			/* save view settings, so that the screen
 			 * won't be restored at the wrong position */
-			old_curswant = init_curswant;
-			old_leftcol = init_leftcol;
-			old_topline = init_topline;
-# ifdef FEAT_DIFF
-			old_topfill = init_topfill;
-# endif
-			old_botline = init_botline;
+			old_viewstate = init_viewstate;
 		    }
 #endif
 		    redrawcmd();
@@ -1132,7 +1148,7 @@ getcmdline(
 		{
 		    /* ":lmap" mappings exists, toggle use of mappings. */
 		    State ^= LANGMAP;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 		    im_set_active(FALSE);	/* Disable input method */
 #endif
 		    if (b_im_ptr != NULL)
@@ -1143,7 +1159,7 @@ getcmdline(
 			    *b_im_ptr = B_IMODE_NONE;
 		    }
 		}
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 		else
 		{
 		    /* There are no ":lmap" mappings, toggle IM.  When
@@ -1799,13 +1815,7 @@ getcmdline(
 			update_topline();
 			validate_cursor();
 			highlight_match = TRUE;
-			old_curswant = curwin->w_curswant;
-			old_leftcol = curwin->w_leftcol;
-			old_topline = curwin->w_topline;
-# ifdef FEAT_DIFF
-			old_topfill = curwin->w_topfill;
-# endif
-			old_botline = curwin->w_botline;
+			save_viewstate(&old_viewstate);
 			update_screen(NOT_VALID);
 			redrawcmdline();
 		    }
@@ -1946,10 +1956,8 @@ cmdline_not_changed:
 #endif
 
 cmdline_changed:
-#ifdef FEAT_AUTOCMD
 	/* Trigger CmdlineChanged autocommands. */
 	trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINECHANGED);
-#endif
 
 #ifdef FEAT_SEARCH_EXTRA
 	/*
@@ -1976,7 +1984,7 @@ cmdline_changed:
 	    if (ccline.cmdlen == 0)
 	    {
 		i = 0;
-		SET_NO_HLSEARCH(TRUE); /* turn off previous highlight */
+		set_no_hlsearch(TRUE); /* turn off previous highlight */
 		redraw_all_later(SOME_VALID);
 	    }
 	    else
@@ -2018,12 +2026,7 @@ cmdline_changed:
 
 	    /* first restore the old curwin values, so the screen is
 	     * positioned in the same way as the actual search command */
-	    curwin->w_leftcol = old_leftcol;
-	    curwin->w_topline = old_topline;
-# ifdef FEAT_DIFF
-	    curwin->w_topfill = old_topfill;
-# endif
-	    curwin->w_botline = old_botline;
+	    restore_viewstate(&old_viewstate);
 	    changed_cline_bef_curs();
 	    update_topline();
 
@@ -2044,7 +2047,7 @@ cmdline_changed:
 	    /* Disable 'hlsearch' highlighting if the pattern matches
 	     * everything. Avoids a flash when typing "foo\|". */
 	    if (empty_pattern(ccline.cmdbuff))
-		SET_NO_HLSEARCH(TRUE);
+		set_no_hlsearch(TRUE);
 
 	    validate_cursor();
 	    /* May redraw the status line to show the cursor position. */
@@ -2111,13 +2114,7 @@ returncmd:
 	    }
 	    curwin->w_cursor = search_start;
 	}
-	curwin->w_curswant = old_curswant;
-	curwin->w_leftcol = old_leftcol;
-	curwin->w_topline = old_topline;
-# ifdef FEAT_DIFF
-	curwin->w_topfill = old_topfill;
-# endif
-	curwin->w_botline = old_botline;
+	restore_viewstate(&old_viewstate);
 	highlight_match = FALSE;
 	validate_cursor();	/* needed for TAB */
 	redraw_all_later(SOME_VALID);
@@ -2160,13 +2157,11 @@ returncmd:
     if (some_key_typed)
 	need_wait_return = FALSE;
 
-#ifdef FEAT_AUTOCMD
     /* Trigger CmdlineLeave autocommands. */
     trigger_cmd_autocmd(cmdline_type, EVENT_CMDLINELEAVE);
-#endif
 
     State = save_State;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
     if (b_im_ptr != NULL && *b_im_ptr != B_IMODE_LMAP)
 	im_save_status(b_im_ptr);
     im_set_active(FALSE);
@@ -2266,7 +2261,6 @@ get_text_locked_msg(void)
     return e_secure;
 }
 
-#if defined(FEAT_AUTOCMD) || defined(PROTO)
 /*
  * Check if "curbuf_lock" or "allbuf_lock" is set and return TRUE when it is
  * and give an error message.
@@ -2296,7 +2290,6 @@ allbuf_locked(void)
     }
     return FALSE;
 }
-#endif
 
     static int
 cmdline_charsize(int idx)
@@ -3306,7 +3299,8 @@ cmdline_paste(
     /* check for valid regname; also accept special characters for CTRL-R in
      * the command line */
     if (regname != Ctrl_F && regname != Ctrl_P && regname != Ctrl_W
-	    && regname != Ctrl_A && !valid_yank_reg(regname, FALSE))
+	    && regname != Ctrl_A && regname != Ctrl_L
+	    && !valid_yank_reg(regname, FALSE))
 	return FAIL;
 
     /* A register containing CTRL-R can cause an endless loop.  Allow using
@@ -3578,10 +3572,25 @@ gotocmdline(int clr)
     static int
 ccheck_abbr(int c)
 {
+    int spos = 0;
+
     if (p_paste || no_abbr)	    /* no abbreviations or in paste mode */
 	return FALSE;
 
-    return check_abbr(c, ccline.cmdbuff, ccline.cmdpos, 0);
+    /* Do not consider '<,'> be part of the mapping, skip leading whitespace.
+     * Actually accepts any mark. */
+    while (VIM_ISWHITE(ccline.cmdbuff[spos]) && spos < ccline.cmdlen)
+	spos++;
+    if (ccline.cmdlen - spos > 5
+	    && ccline.cmdbuff[spos] == '\''
+	    && ccline.cmdbuff[spos + 2] == ','
+	    && ccline.cmdbuff[spos + 3] == '\'')
+	spos += 5;
+    else
+	/* check abbreviation from the beginning of the commandline */
+	spos = 0;
+
+    return check_abbr(c, ccline.cmdbuff, ccline.cmdpos, spos);
 }
 
 #if defined(FEAT_CMDL_COMPL) || defined(PROTO)
@@ -4983,10 +4992,8 @@ ExpandFromContext(
 	    {EXPAND_SYNTIME, get_syntime_arg, TRUE, TRUE},
 #endif
 	    {EXPAND_HIGHLIGHT, get_highlight_name, TRUE, TRUE},
-#ifdef FEAT_AUTOCMD
 	    {EXPAND_EVENTS, get_event_name, TRUE, TRUE},
 	    {EXPAND_AUGROUP, get_augroup_name, TRUE, TRUE},
-#endif
 #ifdef FEAT_CSCOPE
 	    {EXPAND_CSCOPE, get_cscope_name, TRUE, TRUE},
 #endif
@@ -5003,6 +5010,7 @@ ExpandFromContext(
 #endif
 	    {EXPAND_ENV_VARS, get_env_name, TRUE, TRUE},
 	    {EXPAND_USER, get_users, TRUE, FALSE},
+	    {EXPAND_ARGLIST, get_arglist_name, TRUE, FALSE},
 	};
 	int	i;
 
@@ -5139,7 +5147,7 @@ expand_shellcmd(
 {
     char_u	*pat;
     int		i;
-    char_u	*path;
+    char_u	*path = NULL;
     int		mustfree = FALSE;
     garray_T    ga;
     char_u	*buf = alloc(MAXPATHL);
@@ -5148,6 +5156,9 @@ expand_shellcmd(
     int		flags = flagsarg;
     int		ret;
     int		did_curdir = FALSE;
+    hashtab_T	found_ht;
+    hashitem_T	*hi;
+    hash_T	hash;
 
     if (buf == NULL)
 	return FAIL;
@@ -5161,15 +5172,14 @@ expand_shellcmd(
 
     flags |= EW_FILE | EW_EXEC | EW_SHELLCMD;
 
-    /* For an absolute name we don't use $PATH. */
-    if (mch_isFullName(pat))
-	path = (char_u *)" ";
-    else if ((pat[0] == '.' && (vim_ispathsep(pat[1])
-			    || (pat[1] == '.' && vim_ispathsep(pat[2])))))
+    if (pat[0] == '.' && (vim_ispathsep(pat[1])
+			       || (pat[1] == '.' && vim_ispathsep(pat[2]))))
 	path = (char_u *)".";
     else
     {
-	path = vim_getenv((char_u *)"PATH", &mustfree);
+	/* For an absolute name we don't use $PATH. */
+	if (!mch_isFullName(pat))
+	    path = vim_getenv((char_u *)"PATH", &mustfree);
 	if (path == NULL)
 	    path = (char_u *)"";
     }
@@ -5180,6 +5190,7 @@ expand_shellcmd(
      * current directory, to find "subdir/cmd".
      */
     ga_init2(&ga, (int)sizeof(char *), 10);
+    hash_init(&found_ht);
     for (s = path; ; s = e)
     {
 	if (*s == NUL)
@@ -5191,9 +5202,6 @@ expand_shellcmd(
 	}
 	else if (*s == '.')
 	    did_curdir = TRUE;
-
-	if (*s == ' ')
-	    ++s;	/* Skip space used for absolute path name. */
 
 #if defined(MSWIN)
 	e = vim_strchr(s, ';');
@@ -5221,15 +5229,23 @@ expand_shellcmd(
 	    {
 		for (i = 0; i < *num_file; ++i)
 		{
-		    s = (*file)[i];
-		    if (STRLEN(s) > l)
+		    char_u *name = (*file)[i];
+
+		    if (STRLEN(name) > l)
 		    {
-			/* Remove the path again. */
-			STRMOVE(s, s + l);
-			((char_u **)ga.ga_data)[ga.ga_len++] = s;
+			// Check if this name was already found.
+			hash = hash_hash(name + l);
+			hi = hash_lookup(&found_ht, name + l, hash);
+			if (HASHITEM_EMPTY(hi))
+			{
+			    // Remove the path that was prepended.
+			    STRMOVE(name, name + l);
+			    ((char_u **)ga.ga_data)[ga.ga_len++] = name;
+			    hash_add_item(&found_ht, hi, name, hash);
+			    name = NULL;
+			}
 		    }
-		    else
-			vim_free(s);
+		    vim_free(name);
 		}
 		vim_free(*file);
 	    }
@@ -5244,12 +5260,13 @@ expand_shellcmd(
     vim_free(pat);
     if (mustfree)
 	vim_free(path);
+    hash_clear(&found_ht);
     return OK;
 }
 
 
 # if defined(FEAT_USR_CMDS) && defined(FEAT_EVAL)
-static void * call_user_expand_func(void *(*user_expand_func)(char_u *, int, char_u **, int), expand_T	*xp, int *num_file, char_u ***file);
+static void * call_user_expand_func(void *(*user_expand_func)(char_u *, int, typval_T *, int), expand_T	*xp, int *num_file, char_u ***file);
 
 /*
  * Call "user_expand_func()" to invoke a user defined Vim script function and
@@ -5257,15 +5274,15 @@ static void * call_user_expand_func(void *(*user_expand_func)(char_u *, int, cha
  */
     static void *
 call_user_expand_func(
-    void	*(*user_expand_func)(char_u *, int, char_u **, int),
+    void	*(*user_expand_func)(char_u *, int, typval_T *, int),
     expand_T	*xp,
     int		*num_file,
     char_u	***file)
 {
     int		keep = 0;
-    char_u	num[50];
-    char_u	*args[3];
+    typval_T	args[4];
     int		save_current_SID = current_SID;
+    char_u	*pat = NULL;
     void	*ret;
     struct cmdline_info	    save_ccline;
 
@@ -5280,10 +5297,15 @@ call_user_expand_func(
 	ccline.cmdbuff[ccline.cmdlen] = 0;
     }
 
-    args[0] = vim_strnsave(xp->xp_pattern, xp->xp_pattern_len);
-    args[1] = xp->xp_line;
-    sprintf((char *)num, "%d", xp->xp_col);
-    args[2] = num;
+    pat = vim_strnsave(xp->xp_pattern, xp->xp_pattern_len);
+
+    args[0].v_type = VAR_STRING;
+    args[0].vval.v_string = pat;
+    args[1].v_type = VAR_STRING;
+    args[1].vval.v_string = xp->xp_line;
+    args[2].v_type = VAR_NUMBER;
+    args[2].vval.v_number = xp->xp_col;
+    args[3].v_type = VAR_UNKNOWN;
 
     /* Save the cmdline, we don't know what the function may do. */
     save_ccline = ccline;
@@ -5298,7 +5320,7 @@ call_user_expand_func(
     if (ccline.cmdbuff != NULL)
 	ccline.cmdbuff[ccline.cmdlen] = keep;
 
-    vim_free(args[0]);
+    vim_free(pat);
     return ret;
 }
 
@@ -6930,10 +6952,9 @@ open_cmdwin(void)
     /* Save current window sizes. */
     win_size_save(&winsizes);
 
-# ifdef FEAT_AUTOCMD
     /* Don't execute autocommands while creating the window. */
     block_autocmds();
-# endif
+
     /* don't use a new tab page */
     cmdmod.tab = 0;
     cmdmod.noswapfile = 1;
@@ -6942,9 +6963,7 @@ open_cmdwin(void)
     if (win_split((int)p_cwh, WSP_BOT) == FAIL)
     {
 	beep_flush();
-# ifdef FEAT_AUTOCMD
 	unblock_autocmds();
-# endif
 	return K_IGNORE;
     }
     cmdwin_type = get_cmdline_type();
@@ -6963,12 +6982,10 @@ open_cmdwin(void)
 # endif
     RESET_BINDING(curwin);
 
-# ifdef FEAT_AUTOCMD
     /* Do execute autocommands for setting the filetype (load syntax). */
     unblock_autocmds();
     /* But don't allow switching to another buffer. */
     ++curbuf_lock;
-# endif
 
     /* Showing the prompt may have set need_wait_return, reset it. */
     need_wait_return = FALSE;
@@ -6983,9 +7000,7 @@ open_cmdwin(void)
 	}
 	set_option_value((char_u *)"ft", 0L, (char_u *)"vim", OPT_LOCAL);
     }
-# ifdef FEAT_AUTOCMD
     --curbuf_lock;
-# endif
 
     /* Reset 'textwidth' after setting 'filetype' (the Vim filetype plugin
      * sets 'textwidth' to 78). */
@@ -7031,12 +7046,10 @@ open_cmdwin(void)
     setmouse();
 # endif
 
-# ifdef FEAT_AUTOCMD
     /* Trigger CmdwinEnter autocommands. */
     trigger_cmd_autocmd(cmdwin_type, EVENT_CMDWINENTER);
     if (restart_edit != 0)	/* autocmd with ":startinsert" */
 	stuffcharReadbuff(K_NOP);
-# endif
 
     i = RedrawingDisabled;
     RedrawingDisabled = 0;
@@ -7049,20 +7062,16 @@ open_cmdwin(void)
 
     RedrawingDisabled = i;
 
-# ifdef FEAT_AUTOCMD
-
-#  ifdef FEAT_FOLDING
+# ifdef FEAT_FOLDING
     save_KeyTyped = KeyTyped;
-#  endif
+# endif
 
     /* Trigger CmdwinLeave autocommands. */
     trigger_cmd_autocmd(cmdwin_type, EVENT_CMDWINLEAVE);
 
-#  ifdef FEAT_FOLDING
+# ifdef FEAT_FOLDING
     /* Restore KeyTyped in case it is modified by autocommands */
     KeyTyped = save_KeyTyped;
-#  endif
-
 # endif
 
     /* Restore the command line info. */
@@ -7080,7 +7089,7 @@ open_cmdwin(void)
     }
     else
     {
-# if defined(FEAT_AUTOCMD) && defined(FEAT_EVAL)
+# if defined(FEAT_EVAL)
 	/* autocmds may abort script processing */
 	if (aborting() && cmdwin_result != K_IGNORE)
 	    cmdwin_result = Ctrl_C;
@@ -7141,10 +7150,8 @@ open_cmdwin(void)
 	    }
 	}
 
-# ifdef FEAT_AUTOCMD
 	/* Don't execute autocommands while deleting the window. */
 	block_autocmds();
-# endif
 # ifdef FEAT_CONCEAL
 	/* Avoid command-line window first character being concealed. */
 	curwin->w_p_cole = 0;
@@ -7162,9 +7169,7 @@ open_cmdwin(void)
 	/* Restore window sizes. */
 	win_size_restore(&winsizes);
 
-# ifdef FEAT_AUTOCMD
 	unblock_autocmds();
-# endif
     }
 
     ga_clear(&winsizes);

@@ -1975,6 +1975,64 @@ do_digraph(int c)
 }
 
 /*
+ * Find a digraph for "val".  If found return the string to display it.
+ * If not found return NULL.
+ */
+    char_u *
+get_digraph_for_char(int val_arg)
+{
+    int		val = val_arg;
+    int		i;
+    int		use_defaults;
+    digr_T	*dp;
+    static      char_u      r[3];
+
+#if defined(FEAT_MBYTE) && defined(USE_UNICODE_DIGRAPHS)
+    if (!enc_utf8)
+    {
+	char_u	    buf[6], *to;
+	vimconv_T   vc;
+
+	// convert the character from 'encoding' to Unicode
+	i = mb_char2bytes(val, buf);
+	vc.vc_type = CONV_NONE;
+	if (convert_setup(&vc, p_enc, (char_u *)"utf-8") == OK)
+	{
+	    vc.vc_fail = TRUE;
+	    to = string_convert(&vc, buf, &i);
+	    if (to != NULL)
+	    {
+		val = utf_ptr2char(to);
+		vim_free(to);
+	    }
+	    (void)convert_setup(&vc, NULL, NULL);
+	}
+    }
+#endif
+
+    for (use_defaults = 0; use_defaults <= 1; use_defaults++)
+    {
+	if (use_defaults == 0)
+	    dp = (digr_T *)user_digraphs.ga_data;
+	else
+	    dp = digraphdefault;
+	for (i = 0; use_defaults ? dp->char1 != NUL
+					       : i < user_digraphs.ga_len; ++i)
+	{
+	    if (dp->result == val)
+	    {
+		r[0] = dp->char1;
+		r[1] = dp->char2;
+		r[2] = NUL;
+		return r;
+	    }
+	    ++dp;
+	}
+    }
+    return NULL;
+}
+
+/*
  * Get a digraph.  Used after typing CTRL-K on the command line or in normal
  * mode.
  * Returns composed character, or NUL when ESC was used.

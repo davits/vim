@@ -203,6 +203,9 @@ static unsigned  quote_meta(char_u *dest, char_u *str, int len);
 
 static void ins_redraw(int ready);
 static void ins_ctrl_v(void);
+#ifdef FEAT_JOB_CHANNEL
+static void init_prompt(int cmdchar_todo);
+#endif
 static void undisplay_dollar(void);
 static void insert_special(int, int, int);
 static void internal_format(int textwidth, int second_indent, int flags, int format_only, int c);
@@ -273,7 +276,7 @@ static int  ins_ctrl_ey(int tc);
 static void ins_try_si(int c);
 #endif
 static colnr_T get_nolist_virtcol(void);
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 static char_u *do_insert_char_pre(int c);
 #endif
 
@@ -351,6 +354,9 @@ edit(
     int		inserted_space = FALSE;     /* just inserted a space */
     int		replaceState = REPLACE;
     int		nomove = FALSE;		    /* don't move cursor on return */
+#ifdef FEAT_JOB_CHANNEL
+    int		cmdchar_todo = cmdchar;
+#endif
 
     /* Remember whether editing was restarted after CTRL-O. */
     did_restart_edit = restart_edit;
@@ -388,7 +394,6 @@ edit(
     ins_compl_clear();	    /* clear stuff for CTRL-X mode */
 #endif
 
-#ifdef FEAT_AUTOCMD
     /*
      * Trigger InsertEnter autocommands.  Do not do this for "r<CR>" or "grx".
      */
@@ -396,7 +401,7 @@ edit(
     {
 	pos_T   save_cursor = curwin->w_cursor;
 
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 	if (cmdchar == 'R')
 	    ptr = (char_u *)"r";
 	else if (cmdchar == 'V')
@@ -405,7 +410,7 @@ edit(
 	    ptr = (char_u *)"i";
 	set_vim_var_string(VV_INSERTMODE, ptr, 1);
 	set_vim_var_string(VV_CHAR, NULL, -1);  /* clear v:char */
-# endif
+#endif
 	apply_autocmds(EVENT_INSERTENTER, NULL, NULL, FALSE, curbuf);
 
 	/* Make sure the cursor didn't move.  Do call check_cursor_col() in
@@ -415,9 +420,9 @@ edit(
 	 * line number is still valid (lines may have been deleted).
 	 * Do not restore if v:char was set to a non-empty string. */
 	if (!EQUAL_POS(curwin->w_cursor, save_cursor)
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 		&& *get_vim_var_str(VV_CHAR) == NUL
-# endif
+#endif
 		&& save_cursor.lnum <= curbuf->b_ml.ml_line_count)
 	{
 	    int save_state = State;
@@ -428,12 +433,11 @@ edit(
 	    State = save_state;
 	}
     }
-#endif
 
 #ifdef FEAT_CONCEAL
     /* Check if the cursor line needs redrawing before changing State.  If
      * 'concealcursor' is "n" it needs to be redrawn without concealing. */
-    conceal_check_cursur_line();
+    conceal_check_cursor_line();
 #endif
 
 #ifdef FEAT_MOUSE
@@ -521,7 +525,7 @@ edit(
      */
     if (curbuf->b_p_iminsert == B_IMODE_LMAP)
 	State |= LANGMAP;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
     im_set_active(curbuf->b_p_iminsert == B_IMODE_IM);
 #endif
 
@@ -709,6 +713,14 @@ edit(
 	    foldCheckClose();
 #endif
 
+#ifdef FEAT_JOB_CHANNEL
+	if (bt_prompt(curbuf))
+	{
+	    init_prompt(cmdchar_todo);
+	    cmdchar_todo = NUL;
+	}
+#endif
+
 	/*
 	 * If we inserted a character at the last position of the last line in
 	 * the window, scroll the window one line up. This avoids an extra
@@ -730,7 +742,14 @@ edit(
 	    mincol = curwin->w_wcol;
 	    validate_cursor_col();
 
-	    if ((int)curwin->w_wcol < mincol - curbuf->b_p_ts
+	    if (
+#ifdef FEAT_VARTABS
+		(int)curwin->w_wcol < mincol - tabstop_at(
+					  get_nolist_virtcol(), curbuf->b_p_ts,
+							 curbuf->b_p_vts_array)
+#else
+		(int)curwin->w_wcol < mincol - curbuf->b_p_ts
+#endif
 		    && curwin->w_wrow == W_WINROW(curwin)
 						 + curwin->w_height - 1 - p_so
 		    && (curwin->w_cursor.lnum != curwin->w_topline
@@ -766,15 +785,11 @@ edit(
 	 */
 	ins_redraw(TRUE);
 
-#ifdef FEAT_SCROLLBIND
 	if (curwin->w_p_scb)
 	    do_check_scrollbind(TRUE);
-#endif
 
-#ifdef FEAT_CURSORBIND
 	if (curwin->w_p_crb)
 	    do_check_cursorbind();
-#endif
 	update_curswant();
 	old_topline = curwin->w_topline;
 #ifdef FEAT_DIFF
@@ -803,12 +818,18 @@ edit(
 	    do
 	    {
 		c = safe_vgetc();
+
+		if (stop_insert_mode)
+		{
+		    // Insert mode ended, possibly from a callback.
+		    count = 0;
+		    nomove = TRUE;
+		    goto doESCkey;
+		}
 	    } while (c == K_IGNORE || c == K_NOP);
 
-#ifdef FEAT_AUTOCMD
 	/* Don't want K_CURSORHOLD for the second key, e.g., after CTRL-V. */
 	did_cursorhold = TRUE;
-#endif
 
 #ifdef FEAT_RIGHTLEFT
 	if (p_hkmap && KeyTyped)
@@ -856,7 +877,7 @@ edit(
 		 * completion: Add to "compl_leader". */
 		if (ins_compl_accept_char(c))
 		{
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 		    /* Trigger InsertCharPre. */
 		    char_u *str = do_insert_char_pre(c);
 		    char_u *p;
@@ -1002,6 +1023,19 @@ edit(
 		goto doESCkey;
 	    }
 #endif
+#ifdef FEAT_JOB_CHANNEL
+	    if (c == Ctrl_C && bt_prompt(curbuf))
+	    {
+		if (invoke_prompt_interrupt())
+		{
+		    if (!bt_prompt(curbuf))
+			// buffer changed to a non-prompt buffer, get out of
+			// Insert mode
+			goto doESCkey;
+		    break;
+		}
+	    }
+#endif
 
 #ifdef UNIX
 do_intr:
@@ -1030,12 +1064,10 @@ doESCkey:
 
 	    if (ins_esc(&count, cmdchar, nomove))
 	    {
-#ifdef FEAT_AUTOCMD
 		if (cmdchar != 'r' && cmdchar != 'v')
 		    apply_autocmds(EVENT_INSERTLEAVE, NULL, NULL,
 							       FALSE, curbuf);
 		did_cursorhold = FALSE;
-#endif
 		return (c == Ctrl_O);
 	    }
 	    continue;
@@ -1161,6 +1193,18 @@ doESCkey:
 	    break;
 
 	case Ctrl_W:	/* delete word before the cursor */
+#ifdef FEAT_JOB_CHANNEL
+	    if (bt_prompt(curbuf) && (mod_mask & MOD_MASK_SHIFT) == 0)
+	    {
+		// In a prompt window CTRL-W is used for window commands.
+		// Use Shift-CTRL-W to delete a word.
+		stuffcharReadbuff(Ctrl_W);
+		restart_edit = 'A';
+		nomove = TRUE;
+		count = 0;
+		goto doESCkey;
+	    }
+#endif
 	    did_backspace = ins_bs(c, BACKSPACE_WORD, &inserted_space);
 	    auto_format(FALSE, TRUE);
 	    break;
@@ -1234,12 +1278,10 @@ doESCkey:
 	case K_IGNORE:	/* Something mapped to nothing */
 	    break;
 
-#ifdef FEAT_AUTOCMD
 	case K_CURSORHOLD:	/* Didn't type something for a while. */
 	    apply_autocmds(EVENT_CURSORHOLDI, NULL, NULL, FALSE, curbuf);
 	    did_cursorhold = TRUE;
 	    break;
-#endif
 
 #ifdef FEAT_GUI_W32
 	    /* On Win32 ignore <M-F4>, we get it when closing the window was
@@ -1386,7 +1428,18 @@ doESCkey:
 		goto doESCkey;
 	    }
 #endif
-	    if (ins_eol(c) && !p_im)
+#ifdef FEAT_JOB_CHANNEL
+	    if (bt_prompt(curbuf))
+	    {
+		invoke_prompt_callback();
+		if (!bt_prompt(curbuf))
+		    // buffer changed to a non-prompt buffer, get out of
+		    // Insert mode
+		    goto doESCkey;
+		break;
+	    }
+#endif
+	    if (ins_eol(c) == FAIL && !p_im)
 		goto doESCkey;	    /* out of memory */
 	    auto_format(FALSE, FALSE);
 	    inserted_space = FALSE;
@@ -1488,7 +1541,7 @@ normalchar:
 	    /*
 	     * Insert a normal character.
 	     */
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 	    if (!p_paste)
 	    {
 		/* Trigger InsertCharPre. */
@@ -1565,16 +1618,14 @@ normalchar:
 	    break;
 	}   /* end of switch (c) */
 
-#ifdef FEAT_AUTOCMD
 	/* If typed something may trigger CursorHoldI again. */
 	if (c != K_CURSORHOLD
-# ifdef FEAT_COMPL_FUNC
+#ifdef FEAT_COMPL_FUNC
 		/* but not in CTRL-X mode, a script can't restore the state */
 		&& ctrl_x_mode == CTRL_X_NORMAL
-# endif
+#endif
 	       )
 	    did_cursorhold = FALSE;
-#endif
 
 	/* If the cursor was moved we didn't just insert a space */
 	if (arrow_used)
@@ -1624,25 +1675,17 @@ ins_redraw(
     if (char_avail())
 	return;
 
-#if defined(FEAT_AUTOCMD) || defined(FEAT_CONCEAL)
+#if defined(FEAT_CONCEAL)
     /* Trigger CursorMoved if the cursor moved.  Not when the popup menu is
      * visible, the command might delete it. */
-    if (ready && (
-# ifdef FEAT_AUTOCMD
-		has_cursormovedI()
-# endif
-# if defined(FEAT_AUTOCMD) && defined(FEAT_CONCEAL)
-		||
-# endif
-# ifdef FEAT_CONCEAL
-		curwin->w_p_cole > 0
+    if (ready && (has_cursormovedI()
+# if defined(FEAT_CONCEAL)
+		|| curwin->w_p_cole > 0
 # endif
 		)
-# ifdef FEAT_AUTOCMD
-	&& !EQUAL_POS(last_cursormoved, curwin->w_cursor)
-# endif
+	    && !EQUAL_POS(last_cursormoved, curwin->w_cursor)
 # ifdef FEAT_INS_EXPAND
-	&& !pum_visible()
+	    && !pum_visible()
 # endif
        )
     {
@@ -1654,7 +1697,6 @@ ins_redraw(
 	if (syntax_present(curwin) && must_redraw)
 	    update_screen(0);
 # endif
-# ifdef FEAT_AUTOCMD
 	if (has_cursormovedI())
 	{
 	    /* Make sure curswant is correct, an autocommand may call
@@ -1662,37 +1704,36 @@ ins_redraw(
 	    update_curswant();
 	    apply_autocmds(EVENT_CURSORMOVEDI, NULL, NULL, FALSE, curbuf);
 	}
-# endif
 # ifdef FEAT_CONCEAL
 	if (curwin->w_p_cole > 0)
 	{
-#  ifdef FEAT_AUTOCMD
 	    conceal_old_cursor_line = last_cursormoved.lnum;
-#  endif
 	    conceal_new_cursor_line = curwin->w_cursor.lnum;
 	    conceal_update_lines = TRUE;
 	}
 # endif
-# ifdef FEAT_AUTOCMD
 	last_cursormoved = curwin->w_cursor;
-# endif
     }
 #endif
 
-#ifdef FEAT_AUTOCMD
     /* Trigger TextChangedI if b_changedtick differs. */
     if (ready && has_textchangedI()
 	    && curbuf->b_last_changedtick != CHANGEDTICK(curbuf)
-# ifdef FEAT_INS_EXPAND
+#ifdef FEAT_INS_EXPAND
 	    && !pum_visible()
-# endif
+#endif
 	    )
     {
+	aco_save_T	aco;
+
+	// save and restore curwin and curbuf, in case the autocmd changes them
+	aucmd_prepbuf(&aco, curbuf);
 	apply_autocmds(EVENT_TEXTCHANGEDI, NULL, NULL, FALSE, curbuf);
+	aucmd_restbuf(&aco);
 	curbuf->b_last_changedtick = CHANGEDTICK(curbuf);
     }
 
-# ifdef FEAT_INS_EXPAND
+#ifdef FEAT_INS_EXPAND
     /* Trigger TextChangedP if b_changedtick differs. When the popupmenu closes
      * TextChangedI will need to trigger for backwards compatibility, thus use
      * different b_last_changedtick* variables. */
@@ -1700,10 +1741,14 @@ ins_redraw(
 	    && curbuf->b_last_changedtick_pum != CHANGEDTICK(curbuf)
 	    && pum_visible())
     {
+	aco_save_T	aco;
+
+	// save and restore curwin and curbuf, in case the autocmd changes them
+	aucmd_prepbuf(&aco, curbuf);
 	apply_autocmds(EVENT_TEXTCHANGEDP, NULL, NULL, FALSE, curbuf);
+	aucmd_restbuf(&aco);
 	curbuf->b_last_changedtick_pum = CHANGEDTICK(curbuf);
     }
-# endif
 #endif
 
     if (must_redraw)
@@ -1837,6 +1882,73 @@ edit_putchar(int c, int highlight)
 	screen_putchar(c, pc_row, pc_col, attr);
     }
 }
+
+#if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
+/*
+ * Return the effective prompt for the current buffer.
+ */
+    char_u *
+prompt_text(void)
+{
+    if (curbuf->b_prompt_text == NULL)
+	return (char_u *)"% ";
+    return curbuf->b_prompt_text;
+}
+
+/*
+ * Prepare for prompt mode: Make sure the last line has the prompt text.
+ * Move the cursor to this line.
+ */
+    static void
+init_prompt(int cmdchar_todo)
+{
+    char_u *prompt = prompt_text();
+    char_u *text;
+
+    curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
+    text = ml_get_curline();
+    if (STRNCMP(text, prompt, STRLEN(prompt)) != 0)
+    {
+	// prompt is missing, insert it or append a line with it
+	if (*text == NUL)
+	    ml_replace(curbuf->b_ml.ml_line_count, prompt, TRUE);
+	else
+	    ml_append(curbuf->b_ml.ml_line_count, prompt, 0, FALSE);
+	curwin->w_cursor.lnum = curbuf->b_ml.ml_line_count;
+	coladvance((colnr_T)MAXCOL);
+	changed_bytes(curbuf->b_ml.ml_line_count, 0);
+    }
+
+    // Insert always starts after the prompt, allow editing text after it.
+    if (Insstart_orig.lnum != curwin->w_cursor.lnum
+				   || Insstart_orig.col != (int)STRLEN(prompt))
+    {
+	Insstart.lnum = curwin->w_cursor.lnum;
+	Insstart.col = (int)STRLEN(prompt);
+	Insstart_orig = Insstart;
+	Insstart_textlen = Insstart.col;
+	Insstart_blank_vcol = MAXCOL;
+	arrow_used = FALSE;
+    }
+
+    if (cmdchar_todo == 'A')
+	coladvance((colnr_T)MAXCOL);
+    if (cmdchar_todo == 'I' || curwin->w_cursor.col <= (int)STRLEN(prompt))
+	curwin->w_cursor.col = (int)STRLEN(prompt);
+    /* Make sure the cursor is in a valid position. */
+    check_cursor();
+}
+
+/*
+ * Return TRUE if the cursor is in the editable position of the prompt line.
+ */
+    int
+prompt_curpos_editable()
+{
+    return curwin->w_cursor.lnum == curbuf->b_ml.ml_line_count
+	&& curwin->w_cursor.col >= (int)STRLEN(prompt_text());
+}
+#endif
 
 /*
  * Undo the previous edit_putchar().
@@ -3686,7 +3798,9 @@ ins_compl_set_original_text(char_u *str)
 {
     char_u	*p;
 
-    /* Replace the original text entry. */
+    /* Replace the original text entry.
+     * The ORIGINAL_TEXT flag is either at the first item or might possibly be
+     * at the last item for backward completion */
     if (compl_first_match->cp_flags & ORIGINAL_TEXT)	/* safety check */
     {
 	p = vim_strsave(str);
@@ -3695,6 +3809,16 @@ ins_compl_set_original_text(char_u *str)
 	    vim_free(compl_first_match->cp_str);
 	    compl_first_match->cp_str = p;
 	}
+    }
+    else if (compl_first_match->cp_prev != NULL
+	    && (compl_first_match->cp_prev->cp_flags & ORIGINAL_TEXT))
+    {
+       p = vim_strsave(str);
+       if (p != NULL)
+       {
+           vim_free(compl_first_match->cp_prev->cp_str);
+           compl_first_match->cp_prev->cp_str = p;
+       }
     }
 }
 
@@ -4001,19 +4125,15 @@ ins_compl_prep(int c)
 	    if (want_cindent && in_cinkeys(KEY_COMPLETE, ' ', inindent(0)))
 		do_c_expr_indent();
 #endif
-#ifdef FEAT_AUTOCMD
 	    /* Trigger the CompleteDone event to give scripts a chance to act
 	     * upon the completion. */
 	    apply_autocmds(EVENT_COMPLETEDONE, NULL, NULL, FALSE, curbuf);
-#endif
 	}
     }
-#ifdef FEAT_AUTOCMD
     else if (ctrl_x_mode == CTRL_X_LOCAL_MSG)
 	/* Trigger the CompleteDone event to give scripts a chance to act
 	 * upon the (possibly failed) completion. */
 	apply_autocmds(EVENT_COMPLETEDONE, NULL, NULL, FALSE, curbuf);
-#endif
 
     /* reset continue_* if we left expansion-mode, if we stay they'll be
      * (re)set properly in ins_complete() */
@@ -4111,7 +4231,7 @@ expand_by_function(
 {
     list_T      *matchlist = NULL;
     dict_T	*matchdict = NULL;
-    char_u	*args[2];
+    typval_T	args[3];
     char_u	*funcname;
     pos_T	pos;
     win_T	*curwin_save;
@@ -4123,15 +4243,18 @@ expand_by_function(
 	return;
 
     /* Call 'completefunc' to obtain the list of matches. */
-    args[0] = (char_u *)"0";
-    args[1] = base;
+    args[0].v_type = VAR_NUMBER;
+    args[0].vval.v_number = 0;
+    args[1].v_type = VAR_STRING;
+    args[1].vval.v_string = base != NULL ? base : (char_u *)"";
+    args[2].v_type = VAR_UNKNOWN;
 
     pos = curwin->w_cursor;
     curwin_save = curwin;
     curbuf_save = curbuf;
 
     /* Call a function, which returns a list or dict. */
-    if (call_vim_function(funcname, 2, args, FALSE, FALSE, &rettv) == OK)
+    if (call_vim_function(funcname, 2, args, &rettv, FALSE) == OK)
     {
 	switch (rettv.v_type)
 	{
@@ -5438,7 +5561,7 @@ ins_complete(int c, int enable_pum)
 	     * Call user defined function 'completefunc' with "a:findstart"
 	     * set to 1 to obtain the length of text to use for completion.
 	     */
-	    char_u	*args[2];
+	    typval_T	args[3];
 	    int		col;
 	    char_u	*funcname;
 	    pos_T	pos;
@@ -5458,8 +5581,11 @@ ins_complete(int c, int enable_pum)
 		return FAIL;
 	    }
 
-	    args[0] = (char_u *)"1";
-	    args[1] = NULL;
+	    args[0].v_type = VAR_NUMBER;
+	    args[0].vval.v_number = 1;
+	    args[1].v_type = VAR_STRING;
+	    args[1].vval.v_string = (char_u *)"";
+	    args[2].v_type = VAR_UNKNOWN;
 	    pos = curwin->w_cursor;
 	    curwin_save = curwin;
 	    curbuf_save = curbuf;
@@ -6207,6 +6333,8 @@ insertchar(
      * 'paste' is set)..
      * Don't do this when there an InsertCharPre autocommand is defined,
      * because we need to fire the event for every character.
+     * Do the check for InsertCharPre before the call to vpeekc() because the
+     * InsertCharPre autocommand could change the input buffer.
      */
 #ifdef USE_ON_FLY_SCROLL
     dont_scroll = FALSE;		/* allow scrolling here */
@@ -6216,6 +6344,7 @@ insertchar(
 #ifdef FEAT_MBYTE
 	    && (!has_mbyte || (*mb_char2len)(c) == 1)
 #endif
+	    && !has_insertcharpre()
 	    && vpeekc() != NUL
 	    && !(State & REPLACE_FLAG)
 #ifdef FEAT_CINDENT
@@ -6224,10 +6353,7 @@ insertchar(
 #ifdef FEAT_RIGHTLEFT
 	    && !p_ri
 #endif
-#ifdef FEAT_AUTOCMD
-	    && !has_insertcharpre()
-#endif
-	       )
+	   )
     {
 #define INPUT_BUFLEN 100
 	char_u		buf[INPUT_BUFLEN + 1];
@@ -8404,7 +8530,7 @@ ins_reg(void)
     ++no_u_sync;
     if (regname == '=')
     {
-# ifdef FEAT_MBYTE
+# ifdef HAVE_INPUT_METHOD
 	int	im_on = im_get_status();
 # endif
 	/* Sync undo when evaluating the expression calls setline() or
@@ -8412,7 +8538,7 @@ ins_reg(void)
 	u_sync_once = 2;
 
 	regname = get_expr_register();
-# ifdef FEAT_MBYTE
+# ifdef HAVE_INPUT_METHOD
 	/* Restore the Input Method. */
 	if (im_on)
 	    im_set_active(TRUE);
@@ -8541,12 +8667,12 @@ ins_ctrl_hat(void)
 	{
 	    curbuf->b_p_iminsert = B_IMODE_LMAP;
 	    State |= LANGMAP;
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
 	    im_set_active(FALSE);
 #endif
 	}
     }
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
     else
     {
 	/* There are no ":lmap" mappings, toggle IM */
@@ -8693,7 +8819,7 @@ ins_esc(
 	}
     }
 
-#ifdef FEAT_MBYTE
+#ifdef HAVE_INPUT_METHOD
     /* Disable IM to allow typing English directly for Normal mode commands.
      * When ":lmap" is enabled don't change 'iminsert' (IM can be enabled as
      * well). */
@@ -8720,7 +8846,7 @@ ins_esc(
      * When recording or for CTRL-O, need to display the new mode.
      * Otherwise remove the mode message.
      */
-    if (Recording || restart_edit != NUL)
+    if (reg_recording != 0 || restart_edit != NUL)
 	showmode();
     else if (p_smd)
 	MSG("");
@@ -8843,7 +8969,6 @@ ins_insert(int replaceState)
     }
 #endif
 
-#ifdef FEAT_AUTOCMD
 # ifdef FEAT_EVAL
     set_vim_var_string(VV_INSERTMODE,
 		   (char_u *)((State & REPLACE_FLAG) ? "i" :
@@ -8853,7 +8978,6 @@ ins_insert(int replaceState)
 			    "r"), 1);
 # endif
     apply_autocmds(EVENT_INSERTCHANGE, NULL, NULL, FALSE, curbuf);
-#endif
     if (State & REPLACE_FLAG)
 	State = INSERT | (State & LANGMAP);
     else
@@ -8946,7 +9070,17 @@ ins_del(void)
 		|| do_join(2, FALSE, TRUE, FALSE, FALSE) == FAIL)
 	    vim_beep(BO_BS);
 	else
+	{
 	    curwin->w_cursor.col = temp;
+#ifdef FEAT_VREPLACE
+	    /* Adjust orig_line_count in case more lines have been deleted than
+	     * have been added. That makes sure, that open_line() later
+	     * can access all buffer lines correctly */
+	    if (State & VREPLACE_FLAG &&
+		    orig_line_count > curbuf->b_ml.ml_line_count)
+		orig_line_count = curbuf->b_ml.ml_line_count;
+#endif
+	}
     }
     else if (del_char(FALSE) == FAIL)  /* delete char under cursor */
 	vim_beep(BO_BS);
@@ -9202,23 +9336,31 @@ ins_bs(
 	 */
 	if (	   mode == BACKSPACE_CHAR
 		&& ((p_sta && in_indent)
-		    || (get_sts_value() != 0
+		    || ((get_sts_value() != 0
+#ifdef FEAT_VARTABS
+			|| tabstop_count(curbuf->b_p_vsts_array)
+#endif
+			)
 			&& curwin->w_cursor.col > 0
 			&& (*(ml_get_cursor() - 1) == TAB
 			    || (*(ml_get_cursor() - 1) == ' '
 				&& (!*inserted_space_p
 				    || arrow_used))))))
 	{
+#ifndef FEAT_VARTABS
 	    int		ts;
+#endif
 	    colnr_T	vcol;
 	    colnr_T	want_vcol;
 	    colnr_T	start_vcol;
 
 	    *inserted_space_p = FALSE;
+#ifndef FEAT_VARTABS
 	    if (p_sta && in_indent)
 		ts = (int)get_sw_value(curbuf);
 	    else
 		ts = (int)get_sts_value();
+#endif
 	    /* Compute the virtual column where we want to be.  Since
 	     * 'showbreak' may get in the way, need to get the last column of
 	     * the previous character. */
@@ -9227,7 +9369,15 @@ ins_bs(
 	    dec_cursor();
 	    getvcol(curwin, &curwin->w_cursor, NULL, NULL, &want_vcol);
 	    inc_cursor();
+#ifdef FEAT_VARTABS
+	    if (p_sta && in_indent)
+		want_vcol = (want_vcol / curbuf->b_p_sw) * curbuf->b_p_sw;
+	    else
+		want_vcol = tabstop_start(want_vcol, curbuf->b_p_sts,
+						     curbuf->b_p_vsts_array);
+#else
 	    want_vcol = (want_vcol / ts) * ts;
+#endif
 
 	    /* delete characters until we are at or before want_vcol */
 	    while (vcol > want_vcol
@@ -9370,7 +9520,7 @@ ins_bs(
 
     /* If deleted before the insertion point, adjust it */
     if (curwin->w_cursor.lnum == Insstart_orig.lnum
-				       && curwin->w_cursor.col < Insstart_orig.col)
+				  && curwin->w_cursor.col < Insstart_orig.col)
 	Insstart_orig.col = curwin->w_cursor.col;
 
     /* vi behaviour: the cursor moves backward but the character that
@@ -9420,6 +9570,11 @@ ins_mouse(int c)
 	     * previous one to stop insert there properly. */
 	    curwin = old_curwin;
 	    curbuf = curwin->w_buffer;
+#ifdef FEAT_JOB_CHANNEL
+	    if (bt_prompt(curbuf))
+		// Restart Insert mode when re-entering the prompt buffer.
+		curbuf->b_prompt_insert = 'A';
+#endif
 	}
 	start_arrow(curwin == old_curwin ? &tpos : NULL);
 	if (curwin != new_curwin && win_valid(new_curwin))
@@ -10012,10 +10167,22 @@ ins_tab(void)
 #endif
 
     /*
-     * When nothing special, insert TAB like a normal character
+     * When nothing special, insert TAB like a normal character.
      */
     if (!curbuf->b_p_et
+#ifdef FEAT_VARTABS
+	    && !(p_sta && ind
+		/* These five lines mean 'tabstop' != 'shiftwidth' */
+		&& ((tabstop_count(curbuf->b_p_vts_array) > 1)
+		    || (tabstop_count(curbuf->b_p_vts_array) == 1
+		        && tabstop_first(curbuf->b_p_vts_array)
+						       != get_sw_value(curbuf))
+	            || (tabstop_count(curbuf->b_p_vts_array) == 0
+		        && curbuf->b_p_ts != get_sw_value(curbuf))))
+	    && tabstop_count(curbuf->b_p_vsts_array) == 0
+#else
 	    && !(p_sta && ind && curbuf->b_p_ts != get_sw_value(curbuf))
+#endif
 	    && get_sts_value() == 0)
 	return TRUE;
 
@@ -10030,6 +10197,20 @@ ins_tab(void)
 #endif
     AppendToRedobuff((char_u *)"\t");
 
+#ifdef FEAT_VARTABS
+    if (p_sta && ind)		/* insert tab in indent, use 'shiftwidth' */
+    {
+	temp = (int)curbuf->b_p_sw;
+	temp -= get_nolist_virtcol() % temp;
+    }
+    else if (tabstop_count(curbuf->b_p_vsts_array) > 0 || curbuf->b_p_sts > 0)
+	                        /* use 'softtabstop' when set */
+	temp = tabstop_padding(get_nolist_virtcol(), curbuf->b_p_sts,
+						     curbuf->b_p_vsts_array);
+    else			/* otherwise use 'tabstop' */
+	temp = tabstop_padding(get_nolist_virtcol(), curbuf->b_p_ts,
+						     curbuf->b_p_vts_array);
+#else
     if (p_sta && ind)		/* insert tab in indent, use 'shiftwidth' */
 	temp = (int)get_sw_value(curbuf);
     else if (curbuf->b_p_sts != 0) /* use 'softtabstop' when set */
@@ -10037,6 +10218,7 @@ ins_tab(void)
     else			/* otherwise use 'tabstop' */
 	temp = (int)curbuf->b_p_ts;
     temp -= get_nolist_virtcol() % temp;
+#endif
 
     /*
      * Insert the first space with ins_char().	It will delete one char in
@@ -10061,7 +10243,13 @@ ins_tab(void)
     /*
      * When 'expandtab' not set: Replace spaces by TABs where possible.
      */
+#ifdef FEAT_VARTABS
+    if (!curbuf->b_p_et && (tabstop_count(curbuf->b_p_vsts_array) > 0
+                            || get_sts_value() > 0
+			    || (p_sta && ind)))
+#else
     if (!curbuf->b_p_et && (get_sts_value() || (p_sta && ind)))
+#endif
     {
 	char_u		*ptr;
 #ifdef FEAT_VREPLACE
@@ -10218,7 +10406,7 @@ ins_tab(void)
 
 /*
  * Handle CR or NL in insert mode.
- * Return TRUE when out of memory or can't undo.
+ * Return FAIL when out of memory or can't undo.
  */
     static int
 ins_eol(int c)
@@ -10226,9 +10414,9 @@ ins_eol(int c)
     int	    i;
 
     if (echeck_abbr(c + ABBR_OFF))
-	return FALSE;
+	return OK;
     if (stop_arrow() == FAIL)
-	return TRUE;
+	return FAIL;
     undisplay_dollar();
 
     /*
@@ -10283,7 +10471,7 @@ ins_eol(int c)
     foldOpenCursor();
 #endif
 
-    return (!i);
+    return i;
 }
 
 #ifdef FEAT_DIGRAPHS
@@ -10573,7 +10761,7 @@ get_nolist_virtcol(void)
     return curwin->w_virtcol;
 }
 
-#ifdef FEAT_AUTOCMD
+#if defined(FEAT_EVAL)
 /*
  * Handle the InsertCharPre autocommand.
  * "c" is the character that was typed.
@@ -10590,11 +10778,11 @@ do_insert_char_pre(int c)
     if (!has_insertcharpre())
 	return NULL;
 
-#ifdef FEAT_MBYTE
+# ifdef FEAT_MBYTE
     if (has_mbyte)
 	buf[(*mb_char2bytes)(c, buf)] = NUL;
     else
-#endif
+# endif
     {
 	buf[0] = c;
 	buf[1] = NUL;

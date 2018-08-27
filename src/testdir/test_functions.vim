@@ -96,6 +96,30 @@ func Test_min()
   call assert_fails('call min(v:none)', 'E712:')
 endfunc
 
+func Test_strwidth()
+  for aw in ['single', 'double']
+    exe 'set ambiwidth=' . aw
+    call assert_equal(0, strwidth(''))
+    call assert_equal(1, strwidth("\t"))
+    call assert_equal(3, strwidth('Vim'))
+    call assert_equal(4, strwidth(1234))
+    call assert_equal(5, strwidth(-1234))
+
+    if has('multi_byte')
+      call assert_equal(2, strwidth('😉'))
+      call assert_equal(17, strwidth('Eĥoŝanĝo ĉiuĵaŭde'))
+      call assert_equal((aw == 'single') ? 6 : 7, strwidth('Straße'))
+    endif
+
+    call assert_fails('call strwidth({->0})', 'E729:')
+    call assert_fails('call strwidth([])', 'E730:')
+    call assert_fails('call strwidth({})', 'E731:')
+    call assert_fails('call strwidth(1.2)', 'E806:')
+  endfor
+
+  set ambiwidth&
+endfunc
+
 func Test_str2nr()
   call assert_equal(0, str2nr(''))
   call assert_equal(1, str2nr('1'))
@@ -875,4 +899,88 @@ func Test_shellescape()
   call assert_equal("'te\\\\\nxt'", shellescape("te\nxt", 1))
 
   let &shell = save_shell
+endfunc
+
+func Test_trim()
+  call assert_equal("Testing", trim("  \t\r\r\x0BTesting  \t\n\r\n\t\x0B\x0B"))
+  call assert_equal("Testing", trim("  \t  \r\r\n\n\x0BTesting  \t\n\r\n\t\x0B\x0B"))
+  call assert_equal("RESERVE", trim("xyz \twwRESERVEzyww \t\t", " wxyz\t"))
+  call assert_equal("wRE    \tSERVEzyww", trim("wRE    \tSERVEzyww"))
+  call assert_equal("abcd\t     xxxx   tail", trim(" \tabcd\t     xxxx   tail"))
+  call assert_equal("\tabcd\t     xxxx   tail", trim(" \tabcd\t     xxxx   tail", " "))
+  call assert_equal(" \tabcd\t     xxxx   tail", trim(" \tabcd\t     xxxx   tail", "abx"))
+  call assert_equal("RESERVE", trim("你RESERVE好", "你好"))
+  call assert_equal("您R E SER V E早", trim("你好您R E SER V E早好你你", "你好"))
+  call assert_equal("你好您R E SER V E早好你你", trim(" \n\r\r   你好您R E SER V E早好你你    \t  \x0B", ))
+  call assert_equal("您R E SER V E早好你你    \t  \x0B", trim("    你好您R E SER V E早好你你    \t  \x0B", " 你好"))
+  call assert_equal("您R E SER V E早好你你    \t  \x0B", trim("    tteesstttt你好您R E SER V E早好你你    \t  \x0B ttestt", " 你好tes"))
+  call assert_equal("您R E SER V E早好你你    \t  \x0B", trim("    tteesstttt你好您R E SER V E早好你你    \t  \x0B ttestt", "   你你你好好好tttsses"))
+  call assert_equal("留下", trim("这些些不要这些留下这些", "这些不要"))
+  call assert_equal("", trim("", ""))
+  call assert_equal("a", trim("a", ""))
+  call assert_equal("", trim("", "a"))
+
+  let chars = join(map(range(1, 0x20) + [0xa0], {n -> nr2char(n)}), '')
+  call assert_equal("x", trim(chars . "x" . chars))
+endfunc
+
+" Test for reg_recording() and reg_executing()
+func Test_reg_executing_and_recording()
+  let s:reg_stat = ''
+  func s:save_reg_stat()
+    let s:reg_stat = reg_recording() . ':' . reg_executing()
+    return ''
+  endfunc
+
+  new
+  call s:save_reg_stat()
+  call assert_equal(':', s:reg_stat)
+  call feedkeys("qa\"=s:save_reg_stat()\<CR>pq", 'xt')
+  call assert_equal('a:', s:reg_stat)
+  call feedkeys("@a", 'xt')
+  call assert_equal(':a', s:reg_stat)
+  call feedkeys("qb@aq", 'xt')
+  call assert_equal('b:a', s:reg_stat)
+  call feedkeys("q\"\"=s:save_reg_stat()\<CR>pq", 'xt')
+  call assert_equal('":', s:reg_stat)
+
+  bwipe!
+  delfunc s:save_reg_stat
+  unlet s:reg_stat
+endfunc
+
+func Test_libcall_libcallnr()
+  if !has('libcall')
+    return
+  endif
+
+  if has('win32')
+    let libc = 'msvcrt.dll'
+  elseif has('mac')
+    let libc = 'libSystem.B.dylib'
+  else
+    " On Unix, libc.so can be in various places.
+    " Interestingly, using an empty string for the 1st argument of libcall
+    " allows to call functions from libc which is not documented.
+    let libc = ''
+  endif
+
+  if has('win32')
+    call assert_equal($USERPROFILE, libcall(libc, 'getenv', 'USERPROFILE'))
+  else
+    call assert_equal($HOME, libcall(libc, 'getenv', 'HOME'))
+  endif
+
+  " If function returns NULL, libcall() should return an empty string.
+  call assert_equal('', libcall(libc, 'getenv', 'X_ENV_DOES_NOT_EXIT'))
+
+  " Test libcallnr() with string and integer argument.
+  call assert_equal(4, libcallnr(libc, 'strlen', 'abcd'))
+  call assert_equal(char2nr('A'), libcallnr(libc, 'toupper', char2nr('a')))
+
+  call assert_fails("call libcall(libc, 'Xdoesnotexist_', '')", 'E364:')
+  call assert_fails("call libcallnr(libc, 'Xdoesnotexist_', '')", 'E364:')
+
+  call assert_fails("call libcall('Xdoesnotexist_', 'getenv', 'HOME')", 'E364:')
+  call assert_fails("call libcallnr('Xdoesnotexist_', 'strlen', 'abcd')", 'E364:')
 endfunc

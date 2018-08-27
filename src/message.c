@@ -1025,7 +1025,7 @@ wait_return(int redraw)
     int		oldState;
     int		tmpState;
     int		had_got_int;
-    int		save_Recording;
+    int		save_reg_recording;
     FILE	*save_scriptout;
 
     if (redraw == TRUE)
@@ -1103,16 +1103,16 @@ wait_return(int redraw)
 	    /* Temporarily disable Recording. If Recording is active, the
 	     * character will be recorded later, since it will be added to the
 	     * typebuf after the loop */
-	    save_Recording = Recording;
+	    save_reg_recording = reg_recording;
 	    save_scriptout = scriptout;
-	    Recording = FALSE;
+	    reg_recording = 0;
 	    scriptout = NULL;
 	    c = safe_vgetc();
 	    if (had_got_int && !global_busy)
 		got_int = FALSE;
 	    --no_mapping;
 	    --allow_keys;
-	    Recording = save_Recording;
+	    reg_recording = save_reg_recording;
 	    scriptout = save_scriptout;
 
 #ifdef FEAT_CLIPBOARD
@@ -1219,6 +1219,9 @@ wait_return(int redraw)
 	    cmdline_row = msg_row;
 	skip_redraw = TRUE;	    /* skip redraw once */
 	do_redraw = FALSE;
+#ifdef FEAT_TERMINAL
+	skip_term_loop = TRUE;
+#endif
     }
 
     /*
@@ -1703,8 +1706,6 @@ str2special(
 	{
 	    c = TO_SPECIAL(str[1], str[2]);
 	    str += 2;
-	    if (c == KS_ZERO)	/* display <Nul> as ^@ or <Nul> */
-		c = NUL;
 	}
 	if (IS_SPECIAL(c) || modifiers)	/* special key */
 	    special = TRUE;
@@ -1830,7 +1831,12 @@ msg_prt_line(char_u *s, int list)
 	    if (c == TAB && (!list || lcs_tab1))
 	    {
 		/* tab amount depends on current column */
+#ifdef FEAT_VARTABS
+		n_extra = tabstop_padding(col, curbuf->b_p_ts,
+						    curbuf->b_p_vts_array) - 1;
+#else
 		n_extra = curbuf->b_p_ts - col % curbuf->b_p_ts - 1;
+#endif
 		if (!list)
 		{
 		    c = ' ';
@@ -2829,6 +2835,9 @@ do_more_prompt(int typed_char)
 		/* Since got_int is set all typeahead will be flushed, but we
 		 * want to keep this ':', remember that in a special way. */
 		typeahead_noflush(':');
+#ifdef FEAT_TERMINAL
+		skip_term_loop = TRUE;
+#endif
 		cmdline_row = Rows - 1;		/* put ':' on this line */
 		skip_redraw = TRUE;		/* skip redraw once */
 		need_wait_return = FALSE;	/* don't wait in main() */
@@ -4059,7 +4068,7 @@ do_browse(
 	}
 	else
 	    fname = gui_mch_browse(flags & BROWSE_SAVE,
-					   title, dflt, ext, initdir, filter);
+			       title, dflt, ext, initdir, (char_u *)_(filter));
 
 	/* We hang around in the dialog for a while, the user might do some
 	 * things to our files.  The Win32 dialog allows deleting or renaming

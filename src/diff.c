@@ -872,13 +872,9 @@ diff_file(
 		    (diff_flags & DIFF_ICASE) ? "-i " : "",
 		    tmp_orig, tmp_new);
 	    append_redir(cmd, (int)len, p_srr, tmp_diff);
-#ifdef FEAT_AUTOCMD
 	    block_autocmds();	/* Avoid ShellCmdPost stuff */
-#endif
 	    (void)call_shell(cmd, SHELL_FILTER|SHELL_SILENT|SHELL_DOOUT);
-#ifdef FEAT_AUTOCMD
 	    unblock_autocmds();
-#endif
 	    vim_free(cmd);
 	}
     }
@@ -913,7 +909,8 @@ ex_diffpatch(exarg_T *eap)
     if (cmdmod.browse)
     {
 	browseFile = do_browse(0, (char_u *)_("Patch file"),
-			 eap->arg, NULL, NULL, BROWSE_FILTER_ALL_FILES, NULL);
+			 eap->arg, NULL, NULL,
+			 (char_u *)_(BROWSE_FILTER_ALL_FILES), NULL);
 	if (browseFile == NULL)
 	    return;		/* operation cancelled */
 	eap->arg = browseFile;
@@ -984,13 +981,9 @@ ex_diffpatch(exarg_T *eap)
 	 * cooked mode to allow the user to respond to prompts. */
 	vim_snprintf((char *)buf, buflen, "patch -o %s %s < %s",
 						  tmp_new, tmp_orig, esc_name);
-#ifdef FEAT_AUTOCMD
 	block_autocmds();	/* Avoid ShellCmdPost stuff */
-#endif
 	(void)call_shell(buf, SHELL_FILTER | SHELL_COOKED);
-#ifdef FEAT_AUTOCMD
 	unblock_autocmds();
-#endif
     }
 
 #ifdef UNIX
@@ -1052,11 +1045,9 @@ ex_diffpatch(exarg_T *eap)
 		    eap->arg = newname;
 		    ex_file(eap);
 
-#ifdef FEAT_AUTOCMD
 		    /* Do filetype detection with the new name. */
 		    if (au_has_group((char_u *)"filetypedetect"))
 			do_cmdline_cmd((char_u *)":doau filetypedetect BufRead");
-#endif
 		}
 	    }
 	}
@@ -1170,16 +1161,12 @@ diff_win_options(
 # endif
 
     /* Use 'scrollbind' and 'cursorbind' when available */
-#ifdef FEAT_SCROLLBIND
     if (!wp->w_p_diff)
 	wp->w_p_scb_save = wp->w_p_scb;
     wp->w_p_scb = TRUE;
-#endif
-#ifdef FEAT_CURSORBIND
     if (!wp->w_p_diff)
 	wp->w_p_crb_save = wp->w_p_crb;
     wp->w_p_crb = TRUE;
-#endif
     if (!wp->w_p_diff)
 	wp->w_p_wrap_save = wp->w_p_wrap;
     wp->w_p_wrap = FALSE;
@@ -1209,10 +1196,8 @@ diff_win_options(
     /* make sure topline is not halfway a fold */
     changed_window_setting_win(wp);
 # endif
-#ifdef FEAT_SCROLLBIND
     if (vim_strchr(p_sbo, 'h') == NULL)
 	do_cmdline_cmd((char_u *)"set sbo+=hor");
-#endif
     /* Save the current values, to be restored in ex_diffoff(). */
     wp->w_p_diff_saved = TRUE;
 
@@ -1231,9 +1216,7 @@ diff_win_options(
 ex_diffoff(exarg_T *eap)
 {
     win_T	*wp;
-#ifdef FEAT_SCROLLBIND
     int		diffwin = FALSE;
-#endif
 
     FOR_ALL_WINDOWS(wp)
     {
@@ -1247,14 +1230,10 @@ ex_diffoff(exarg_T *eap)
 	    if (wp->w_p_diff_saved)
 	    {
 
-#ifdef FEAT_SCROLLBIND
 		if (wp->w_p_scb)
 		    wp->w_p_scb = wp->w_p_scb_save;
-#endif
-#ifdef FEAT_CURSORBIND
 		if (wp->w_p_crb)
 		    wp->w_p_crb = wp->w_p_crb_save;
-#endif
 		if (!wp->w_p_wrap)
 		    wp->w_p_wrap = wp->w_p_wrap_save;
 #ifdef FEAT_FOLDING
@@ -1286,20 +1265,16 @@ ex_diffoff(exarg_T *eap)
 	    /* Note: 'sbo' is not restored, it's a global option. */
 	    diff_buf_adjust(wp);
 	}
-#ifdef FEAT_SCROLLBIND
 	diffwin |= wp->w_p_diff;
-#endif
     }
 
     /* Also remove hidden buffers from the list. */
     if (eap->forceit)
 	diff_buf_clear();
 
-#ifdef FEAT_SCROLLBIND
     /* Remove "hor" from from 'scrollopt' if there are no diff windows left. */
     if (!diffwin && vim_strchr(p_sbo, 'h') != NULL)
 	do_cmdline_cmd((char_u *)"set sbo-=hor");
-#endif
 }
 
 /*
@@ -2166,6 +2141,13 @@ nv_diffgetput(int put, long count)
     exarg_T	ea;
     char_u	buf[30];
 
+#ifdef FEAT_JOB_CHANNEL
+    if (bt_prompt(curbuf))
+    {
+	vim_beep(BO_OPER);
+	return;
+    }
+#endif
     if (count == 0)
 	ea.arg = (char_u *)"";
     else

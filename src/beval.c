@@ -124,6 +124,11 @@ get_beval_info(
 		*lnump = lnum;
 		*textp = lbuf;
 		*colp = col;
+#ifdef FEAT_VARTABS
+		if (beval->vts)
+		    vim_free(beval->vts);
+		beval->vts = tabstop_copy(wp->w_buffer->b_p_vts_array);
+#endif
 		beval->ts = wp->w_buffer->b_p_ts;
 		return OK;
 	    }
@@ -137,7 +142,7 @@ get_beval_info(
  * Show a balloon with "mesg" or "list".
  */
     void
-post_balloon(BalloonEval *beval UNUSED, char_u *mesg, list_T *list)
+post_balloon(BalloonEval *beval UNUSED, char_u *mesg, list_T *list UNUSED)
 {
 # ifdef FEAT_BEVAL_TERM
 #  ifdef FEAT_GUI

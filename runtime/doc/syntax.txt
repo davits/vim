@@ -1,4 +1,4 @@
-*syntax.txt*	For Vim version 8.0.  Last change: 2018 Jan 31
+*syntax.txt*	For Vim version 8.1.  Last change: 2018 Apr 30
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -1977,7 +1977,7 @@ set "lite_minlines" to the value you desire.  Example: >
 
 LPC						*lpc.vim* *ft-lpc-syntax*
 
-LPC stands for a simple, memory-efficient language: Lars Pensj| C.  The
+LPC stands for a simple, memory-efficient language: Lars Pensjö C.  The
 file name of LPC is usually *.c.  Recognizing these files as LPC would bother
 users writing only C programs.	If you want to use LPC syntax in Vim, you
 should set a variable in your .vimrc file: >
@@ -4627,7 +4627,9 @@ in their own color.
 				runtime colors/evening.vim
 				hi Statement ctermfg=Blue guifg=Blue
 
-<			After the color scheme has been loaded the
+<			Before the color scheme will be loaded the
+			|ColorSchemePre| autocommand event is triggered.
+			After the color scheme has been loaded the
 			|ColorScheme| autocommand event is triggered.
 			For info about writing a colorscheme file: >
 				:edit $VIMRUNTIME/colors/README.txt
